@@ -1,0 +1,804 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Group Opinion Study</title>
+
+  <!-- jsPsych core + plugins. NOTE: must point at the browser bundle
+       (dist/index.browser.min.js); the bare package root resolves to the
+       CommonJS build, which does not define the globals in a browser. -->
+  <script src="https://cdn.jsdelivr.net/npm/jspsych@8.2.3/dist/index.browser.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@jspsych/plugin-html-button-response@2.1.0/dist/index.browser.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@jspsych/plugin-survey-likert@2.2.0/dist/index.browser.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@jspsych/plugin-survey-multi-choice@2.2.0/dist/index.browser.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@jspsych/plugin-survey-text@2.1.0/dist/index.browser.min.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jspsych@8.2.3/css/jspsych.css" />
+
+  <style>
+    :root {
+      --ink: #1f2328;
+      --muted: #5b636b;
+      --line: #d9dee3;
+      --panel: #f6f8fa;
+      --accent: #2c5f8a;
+
+      /* Color coding for the two member questions. Change these to recolor
+         the opinion / intensity items on the paper AND the numbers on people. */
+      --c-opinion: #1f6f8b;        /* teal-blue: opinion / extremity */
+      --c-opinion-soft: #bcd9e2;
+      --c-intensity: #c2701c;      /* amber: intensity / strength */
+      --c-intensity-soft: #ecd2ab;
+    }
+    .jspsych-display-element { font-size: 16px; color: var(--ink); }
+    .jspsych-content { max-width: 760px; }
+
+    .wrap { text-align: left; line-height: 1.55; }
+    .wrap h2 { font-size: 20px; margin: 0 0 .6em; }
+    .wrap p { margin: 0 0 .8em; }
+    .lead { font-size: 17px; }
+
+    .statement {
+      background: var(--panel);
+      border-left: 4px solid var(--accent);
+      padding: 12px 16px;
+      border-radius: 4px;
+      font-weight: 600;
+      margin: 0 0 16px;
+    }
+
+    /* Persistent scale legend */
+    .legend {
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 12px 14px;
+      margin: 0 0 16px;
+      background: #fff;
+      font-size: 14px;
+    }
+    .legend .legend-title { font-weight: 600; color: var(--muted); margin-bottom: 6px; }
+    .legend .scale-row { display: flex; flex-wrap: wrap; gap: 6px 10px; margin-bottom: 8px; }
+    .legend .chip {
+      border: 1px solid var(--line); border-radius: 999px;
+      padding: 2px 10px; white-space: nowrap; background: var(--panel);
+    }
+    .legend .scale-row:last-child { margin-bottom: 0; }
+
+    /* Group table */
+    table.group { border-collapse: collapse; width: 100%; margin: 4px 0 16px; }
+    table.group th, table.group td {
+      border: 1px solid var(--line); padding: 8px 10px; text-align: left; font-size: 15px;
+    }
+    table.group th { background: var(--panel); font-weight: 600; }
+    table.group tr:nth-child(even) td { background: #fbfcfd; }
+
+    /* Raters: the two people who each gave a one-number answer for the group */
+    .raters {
+      background: transparent; border: none;
+      padding: 4px 0 10px; margin: 0 0 14px; text-align: center;
+    }
+    .raters-intro { font-size: 15px; color: var(--muted); }
+    .raters-question {
+      font-size: 16px; font-weight: 700; color: var(--ink); margin: 4px 0 16px;
+    }
+    .raters-cards { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; }
+    .rater-card {
+      flex: 0 1 200px; background: var(--panel);
+      border: 1px solid var(--line); border-radius: 8px; padding: 12px 16px;
+    }
+    .rater-who { font-size: 14px; font-weight: 700; color: var(--muted); }
+    .rater-val { font-size: 30px; font-weight: 800; margin-top: 4px; color: var(--ink); }
+
+    .hint { font-size: 13px; color: var(--muted); }
+
+    /* ===== Paper + people visualization of the group ===== */
+    /* Gray panel demarcates "the group + what they saw" from the rater
+       rater answers and accuracy questions that appear below it. */
+    .paper-viz {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 20px;
+      margin: 4px 0 18px;
+    }
+
+    /* The "questionnaire" each member filled out */
+    .paper {
+      box-sizing: border-box; width: 700px; max-width: 100%; margin: 0 auto;
+      background: #fffdf6;
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      box-shadow: 0 2px 8px rgba(0,0,0,.12), 0 0 0 1px rgba(0,0,0,.02);
+      padding: 18px 20px 20px;
+      text-align: center;
+    }
+    .paper-caption {
+      font-size: 11px; font-weight: 700; letter-spacing: .06em;
+      text-transform: uppercase; color: var(--muted); margin-bottom: 4px;
+    }
+    .paper-statement {
+      font-weight: 700; font-size: 15px; line-height: 1.4;
+      white-space: nowrap; margin-bottom: 16px; padding-bottom: 12px;
+      border-bottom: 1px dashed var(--line);
+    }
+    .qblock { margin-bottom: 18px; }
+    .qblock:last-child { margin-bottom: 0; }
+    .qtext { font-size: 14px; font-weight: 600; margin-bottom: 9px; line-height: 1.4; }
+    .q-opinion .qtext { color: var(--c-opinion); }
+    .q-intensity .qtext { color: var(--c-intensity); }
+
+    .scale { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+    .scale .opt {
+      border: 1.5px solid var(--line); border-radius: 7px;
+      background: #fff; padding: 7px 4px 6px; text-align: center;
+    }
+    .scale-opinion { flex-wrap: nowrap; }
+    .scale-opinion .opt { flex: 1 1 0; min-width: 0; }
+    .scale-intensity .opt { flex: 0 1 130px; }
+    .scale-opinion .opt { border-color: var(--c-opinion-soft); }
+    .scale-intensity .opt { border-color: var(--c-intensity-soft); }
+    .opt-num { display: block; font-size: 16px; font-weight: 800; line-height: 1; }
+    .scale-opinion .opt-num { color: var(--c-opinion); }
+    .scale-intensity .opt-num { color: var(--c-intensity); }
+    .opt-lab {
+      display: block; font-size: 10px; color: var(--muted);
+      margin-top: 5px; line-height: 1.2;
+    }
+
+    /* The group members, revealed below the paper */
+    .group-reveal { margin-top: 18px; text-align: center; }
+    .reveal-msg {
+      font-size: 15px; color: var(--ink); margin-bottom: 14px;
+    }
+    .group-people {
+      display: flex; flex-wrap: wrap; gap: 16px 24px; justify-content: center;
+    }
+    .person { display: inline-flex; align-items: center; gap: 4px; }
+    .person svg { width: 50px; height: 58px; display: block; flex: none; }
+    .person .sil { fill: #c7cfd7; }
+    .person .nums { display: flex; flex-direction: column; gap: 4px; }
+    .person .num {
+      background: #fff; border: 1px solid var(--line); border-radius: 6px;
+      padding: 1px 9px; min-width: 1.6em; text-align: center;
+      font-weight: 800; font-size: 20px; line-height: 1.4;
+    }
+    .person .num-op { color: var(--c-opinion); border-color: var(--c-opinion-soft); }
+    .person .num-in { color: var(--c-intensity); border-color: var(--c-intensity-soft); }
+
+    .people-key {
+      display: flex; gap: 14px; margin-top: 14px; justify-content: center;
+      font-size: 12px; color: var(--muted);
+    }
+    .people-key span { display: inline-flex; align-items: center; gap: 5px; }
+    .people-key .dot { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
+    .people-key .dot.op { background: var(--c-opinion); }
+    .people-key .dot.in { background: var(--c-intensity); }
+
+    /* Keep the rating (Likert) scales at the bottom to a narrower width */
+    .jspsych-survey-likert-opts { max-width: 520px; margin-left: auto; margin-right: auto; }
+  </style>
+</head>
+<body></body>
+<script>
+/* Fail loudly and clearly if a CDN bundle didn't load. */
+(function(){
+  const need = { initJsPsych: typeof initJsPsych,
+                 jsPsychHtmlButtonResponse: typeof jsPsychHtmlButtonResponse,
+                 jsPsychSurveyLikert: typeof jsPsychSurveyLikert,
+                 jsPsychSurveyMultiChoice: typeof jsPsychSurveyMultiChoice,
+                 jsPsychSurveyText: typeof jsPsychSurveyText };
+  const missing = Object.keys(need).filter(k => need[k] === "undefined");
+  if(missing.length){
+    document.body.innerHTML =
+      '<div style="max-width:640px;margin:60px auto;font-family:sans-serif;line-height:1.5">' +
+      '<h2>Could not load jsPsych</h2><p>These libraries did not load: <code>' +
+      missing.join(", ") + '</code>. Check your internet connection or the CDN URLs ' +
+      'in the page &lt;head&gt;.</p></div>';
+    throw new Error("jsPsych libraries failed to load: " + missing.join(", "));
+  }
+})();
+
+/* ============================================================
+   Weighted Attitudes — Study 1
+   Within-person; 3 issues; per-issue random draw of 1 of 18 cells;
+   per-issue independent A/B label randomization.
+   ============================================================ */
+
+/* ---------- Settings you may want to edit ---------- */
+const SETTINGS = {
+  study_minutes: 8,
+  // Set to true while testing to dump the data table at the end.
+  debug_show_data_at_end: false,
+  // Real-data framing per the locked spec. If you switch to hypothetical
+  // framing, edit CONSENT_HTML and append a deception debrief.
+  completion_url: null,   // e.g. "https://app.prolific.com/submissions/complete?cc=XXXX"
+
+  // Hard terminate (first-issue manipulation check):
+  screenout_url: null,    // if set, a failed check redirects here (e.g. Prolific screen-out link)
+                          // instead of showing the end message below.
+  terminate_on_ambiguous_cell: true   // default: any failed check terminates, including mean-0
+                                       // ("evenly split") cells. Set to false only if piloting
+                                       // shows elevated misses on balanced cells.
+};
+
+const ISSUES = [
+  { key: "abortion", statement: "Abortion should be legally available to anyone who wants one." },
+  { key: "climate",  statement: "The federal government should do more to reduce the effects of climate change." },
+  { key: "gun",      statement: "The federal government should make it more difficult to buy a gun." }
+];
+
+/* ---------- The 18 stimulus cells ----------
+   members: [position, weight]; simple = "Mean est." column;
+   stylized = "Stylized est." options (B's value is drawn from these). */
+const CELLS = [
+  { id:"S1_L", set:1, mean:-1, n:4, skew:"Left",  members:[[-2,2],[-1,2],[-1,1],[0,1]],                 simple:-1.0, stylized:[-1.1,-1.2] },
+  { id:"S1_S", set:1, mean:-1, n:4, skew:"Same",  members:[[-2,2],[-1,1],[-1,1],[0,2]],                 simple:-1.0, stylized:[-1.05,-0.95,-1.1,-0.9] },
+  { id:"S1_R", set:1, mean:-1, n:4, skew:"Right", members:[[-2,1],[-1,1],[-1,2],[0,2]],                 simple:-1.0, stylized:[-0.9,-0.8] },
+
+  { id:"S2_L", set:2, mean:-1, n:5, skew:"Left",  members:[[-2,2],[-2,2],[-1,1],[-1,1],[1,1]],          simple:-1.0, stylized:[-1.1,-1.2] },
+  { id:"S2_S", set:2, mean:-1, n:5, skew:"Same",  members:[[-2,2],[-2,1],[-1,1],[-1,1],[1,2]],          simple:-1.0, stylized:[-1.05,-0.95,-1.1,-0.9] },
+  { id:"S2_R", set:2, mean:-1, n:5, skew:"Right", members:[[-2,1],[-2,1],[-1,1],[-1,2],[1,2]],          simple:-1.0, stylized:[-0.9,-0.8] },
+
+  { id:"S3_L", set:3, mean:0,  n:4, skew:"Left",  members:[[-2,2],[-1,2],[1,1],[2,1]],                  simple:0.0,  stylized:[-0.1,-0.2] },
+  { id:"S3_S", set:3, mean:0,  n:4, skew:"Same",  members:[[-2,2],[-1,1],[1,1],[2,2]],                  simple:0.0,  stylized:[-0.05,0.05,-0.1,0.1] },
+  { id:"S3_R", set:3, mean:0,  n:4, skew:"Right", members:[[-2,1],[-1,1],[1,2],[2,2]],                  simple:0.0,  stylized:[0.1,0.2] },
+
+  { id:"S4_L", set:4, mean:0,  n:5, skew:"Left",  members:[[-2,2],[-1,2],[0,1],[1,1],[2,1]],            simple:0.0,  stylized:[-0.1,-0.2] },
+  { id:"S4_S", set:4, mean:0,  n:5, skew:"Same",  members:[[-2,2],[-1,1],[0,1],[1,1],[2,2]],            simple:0.0,  stylized:[-0.05,0.05,-0.1,0.1] },
+  { id:"S4_R", set:4, mean:0,  n:5, skew:"Right", members:[[-2,1],[-1,1],[0,1],[1,2],[2,2]],            simple:0.0,  stylized:[0.1,0.2] },
+
+  { id:"S5_L", set:5, mean:1,  n:4, skew:"Left",  members:[[0,2],[1,2],[1,1],[2,1]],                    simple:1.0,  stylized:[0.9,0.8] },
+  { id:"S5_S", set:5, mean:1,  n:4, skew:"Same",  members:[[0,2],[1,1],[1,1],[2,2]],                    simple:1.0,  stylized:[0.95,1.05,0.9,1.1] },
+  { id:"S5_R", set:5, mean:1,  n:4, skew:"Right", members:[[0,1],[1,1],[1,2],[2,2]],                    simple:1.0,  stylized:[1.1,1.2] },
+
+  { id:"S6_L", set:6, mean:1,  n:5, skew:"Left",  members:[[-1,2],[1,2],[1,1],[2,1],[2,1]],             simple:1.0,  stylized:[0.9,0.8] },
+  { id:"S6_S", set:6, mean:1,  n:5, skew:"Same",  members:[[-1,2],[1,1],[1,1],[2,1],[2,2]],             simple:1.0,  stylized:[0.95,1.05,0.9,1.1] },
+  { id:"S6_R", set:6, mean:1,  n:5, skew:"Right", members:[[-1,1],[1,1],[1,1],[2,2],[2,2]],             simple:1.0,  stylized:[1.1,1.2] }
+];
+
+/* ---------- Label maps ---------- */
+const POS_LABELS = { "-2":"Disagree", "-1":"Slightly disagree", "0":"Neither agree nor disagree", "1":"Slightly agree", "2":"Agree" };
+const STR_LABELS = { "1":"Somewhat strongly", "2":"Very strongly" };
+
+/* ---------- Formatting helpers ---------- */
+const MINUS = "\u2212"; // proper minus sign for display
+function fmtInt(v){ if(v>0) return "+"+v; if(v<0) return MINUS+Math.abs(v); return "0"; }
+function fmtVal(v){ const s = v>0?"+":(v<0?MINUS:""); return s+Math.abs(v).toFixed(1); }
+function randChoice(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
+
+/* ---------- HTML builders ---------- */
+function legendHTML(){
+  const opinion = ["-2","-1","0","1","2"].map(k =>
+    `<span class="chip">${fmtInt(parseInt(k))} &nbsp;${POS_LABELS[k]}</span>`).join("");
+  const strength = ["1","2"].map(k =>
+    `<span class="chip">${k} &nbsp;${STR_LABELS[k]}</span>`).join("");
+  return `
+    <div class="legend">
+      <div class="legend-title">Extremity scale (where the person stands)</div>
+      <div class="scale-row">${opinion}</div>
+      <div class="legend-title">Intensity scale (how strongly they feel)</div>
+      <div class="scale-row">${strength}</div>
+    </div>`;
+}
+
+/* The blank questionnaire each member filled out: statement + two
+   color-coded questions, each with a prominent-number response scale. */
+function opinionScaleHTML(){
+  // Keep the two "Slightly ..." labels two lines so the tiles align.
+  const labelFix = { "-1":"Slightly<br>disagree", "1":"Slightly<br>agree" };
+  const opts = [-2,-1,0,1,2].map(v => `
+    <div class="opt">
+      <span class="opt-num">${fmtInt(v)}</span>
+      <span class="opt-lab">${labelFix[String(v)] || POS_LABELS[String(v)]}</span>
+    </div>`).join("");
+  return `<div class="scale scale-opinion">${opts}</div>`;
+}
+function intensityScaleHTML(){
+  const opts = [1,2].map(v => `
+    <div class="opt">
+      <span class="opt-num">${v}</span>
+      <span class="opt-lab">${STR_LABELS[String(v)]}</span>
+    </div>`).join("");
+  return `<div class="scale scale-intensity">${opts}</div>`;
+}
+
+/* A single group member: a person icon with their two answers overlaid,
+   color-coded to match the two questions on the paper. */
+function personHTML(pos, w){
+  return `<div class="person">
+      <svg viewBox="0 0 78 84" aria-hidden="true">
+        <circle class="sil" cx="39" cy="20" r="14"/>
+        <path class="sil" d="M39,37 C23,37 14,51 14,78 L64,78 C64,51 55,37 39,37 Z"/>
+      </svg>
+      <div class="nums">
+        <span class="num num-op">${fmtInt(pos)}</span>
+        <span class="num num-in">${w}</span>
+      </div>
+    </div>`;
+}
+
+/* Just the questionnaire "paper": statement + the two color-coded scales. */
+function paperCardHTML(ctx){
+  return `<div class="paper">
+      <div class="paper-caption">Target statement</div>
+      <div class="paper-statement">${ctx.statement}</div>
+      <div class="qblock q-opinion">
+        <div class="qtext">What is your opinion of the target statement?</div>
+        ${opinionScaleHTML()}
+      </div>
+      <div class="qblock q-intensity">
+        <div class="qtext">You just indicated your opinion about the target statement.<br>How strongly do you feel about your opinion?</div>
+        ${intensityScaleHTML()}
+      </div>
+    </div>`;
+}
+
+/* The group members revealed below the paper, with an optional message. */
+function peopleRevealHTML(ctx, msg){
+  const people = ctx.displayMembers.map(m => personHTML(m[0], m[1])).join("");
+  const msgHTML = msg ? `<div class="reveal-msg">${msg}</div>` : "";
+  return `<div class="group-reveal">
+      ${msgHTML}
+      <div class="group-people">${people}</div>
+      <div class="people-key">
+        <span><span class="dot op"></span>opinion</span>
+        <span><span class="dot in"></span>strength</span>
+      </div>
+    </div>`;
+}
+
+/* Paper (questionnaire) on top, optionally with the group members below it.
+   opts: { showPeople (default true), revealMsg (null = default sentence,
+   "" = no message) }. */
+function groupVizHTML(ctx, opts){
+  const o = Object.assign({ showPeople:true, revealMsg:null }, opts);
+  let html = paperCardHTML(ctx);
+  if(o.showPeople){
+    const n = ctx.displayMembers.length;
+    const msg = (o.revealMsg !== null) ? o.revealMsg
+      : `A group of ${n} people responded to the survey above. Here are their answers.`;
+    html += peopleRevealHTML(ctx, msg);
+  }
+  return `<div class="paper-viz">${html}</div>`;
+}
+
+function summariesHTML(ctx){
+  return `
+    <div class="raters">
+      <div class="raters-intro">Two people were shown this group and asked:</div>
+      <div class="raters-question">What is this group's average opinion of the target issue?</div>
+      <div class="raters-cards">
+        <div class="rater-card">
+          <div class="rater-who">Person 1's answer</div>
+          <div class="rater-val">${fmtVal(ctx.displayedA)}</div>
+        </div>
+        <div class="rater-card">
+          <div class="rater-who">Person 2's answer</div>
+          <div class="rater-val">${fmtVal(ctx.displayedB)}</div>
+        </div>
+      </div>
+    </div>`;
+}
+
+/* Context panel reused across stimulus + rating screens.
+   opts: { showGroup, showSummaries } */
+function contextHTML(ctx, opts){
+  const o = Object.assign({ showGroup:true, showSummaries:false }, opts);
+  // On group screens the "paper" carries the statement and both scales, so it
+  // replaces the standalone statement banner + legend. Other screens fall back.
+  let html = o.showGroup
+    ? groupVizHTML(ctx)
+    : `<div class="statement">${ctx.statement}</div>` + legendHTML();
+  if(o.showSummaries) html += summariesHTML(ctx);
+  return html;
+}
+
+/* ---------- Scale label arrays ---------- */
+const ACC_LABELS = ["1<br>Not at all<br>accurate","2","3","4","5","6","7<br>Extremely<br>accurate"];
+function bipolarLabels(leftWord, rightWord){
+  // 7-point; index 3 is the midpoint
+  return [leftWord, "", "", "Equally so", "", "", rightWord];
+}
+
+/* ============================================================
+   Build experiment
+   ============================================================ */
+const jsPsych = initJsPsych({
+  on_finish: function(){
+    if(SETTINGS.debug_show_data_at_end) jsPsych.data.displayData();
+    if(SETTINGS.completion_url) window.location = SETTINGS.completion_url;
+  }
+});
+
+/* Subject + URL params (Prolific-friendly) */
+const urlParams = new URLSearchParams(window.location.search);
+const subjectId = jsPsych.randomization.randomID(10);
+jsPsych.data.addProperties({
+  subject_id: subjectId,
+  prolific_pid: urlParams.get("PROLIFIC_PID"),
+  study_id: urlParams.get("STUDY_ID"),
+  session_id: urlParams.get("SESSION_ID")
+});
+
+/* Holds the current issue's piped comparative choice for the open-ended item */
+let pipeChoice = { sentence: "You indicated that the two answers were equally accurate." };
+
+/* Hard terminate: redirect to a screen-out URL if configured, otherwise abort
+   with a closing message. Used by the example attention checks and the
+   first-issue manipulation check. */
+function terminateStudy(){
+  if(SETTINGS.screenout_url){
+    window.location = SETTINGS.screenout_url;
+  } else {
+    jsPsych.abortExperiment(
+      '<div style="max-width:560px;margin:60px auto;font-family:sans-serif;line-height:1.5;text-align:left">' +
+      '<h2>Thank you for your time</h2><p>Based on your response to the previous question, ' +
+      'you will not continue with this study. You may now close this window.</p></div>'
+    );
+  }
+}
+
+const timeline = [];
+
+/* ---------- Consent ---------- */
+const CONSENT_HTML = `
+  <div class="wrap">
+    <h2>About this study</h2>
+    <p class="lead">In this study you'll look at how small groups of people responded to questions about
+    political issues, and you'll evaluate short answers about each group. The responses you'll see were given
+    by participants in an earlier survey. The study takes about ${SETTINGS.study_minutes} minutes.</p>
+    <p>Your participation is voluntary and your responses are anonymous. You may stop at any time.</p>
+    <p>Click <strong>I agree</strong> to begin.</p>
+  </div>`;
+timeline.push({
+  type: jsPsychHtmlButtonResponse,
+  stimulus: CONSENT_HTML,
+  choices: ["I agree"],
+  data: { trial_tag: "consent" }
+});
+
+/* ---------- Instructions (stepped, with worked examples) ----------
+   Fixed example questionnaires with clear majorities, so the two attention
+   checks on each example have unambiguous correct answers. */
+const EX_Q1 = {
+  statement: "Our town should build more public parks.",
+  displayMembers: [[2,2],[1,2],[2,1],[-1,2]]            // 4 people: lean agree, mostly very strongly
+};
+const EX_Q2 = {
+  statement: "The school day should start one hour later.",
+  displayMembers: [[-2,1],[-1,1],[-2,2],[1,1],[2,2]]    // 5 people: lean disagree, mostly somewhat
+};
+
+/* One instruction screen: a centered sentence above an example questionnaire. */
+function instrScreen(text, ctx, opts){
+  return `<div class="wrap" style="text-align:center"><p class="lead">${text}</p></div>`
+       + groupVizHTML(ctx, opts);
+}
+
+/* Teaching screens with no group shown yet. */
+const INTRO_SCREENS = [
+  { tag: "instructions_1",
+    text: "In this study, you'll see a series of questionnaires, like this one:" },
+  { tag: "instructions_2",
+    text: "Each questionnaire includes a different target statement. It asks people to report (1) their opinion of the target statement and (2) how strongly they feel about their opinion." },
+  { tag: "instructions_3",
+    text: "For each questionnaire, you'll see how a group of people responded to both questions." }
+];
+INTRO_SCREENS.forEach(function(s){
+  timeline.push({
+    type: jsPsychHtmlButtonResponse,
+    stimulus: instrScreen(s.text, EX_Q1, { showPeople:false }),
+    choices: ["Continue"],
+    data: { trial_tag: s.tag }
+  });
+});
+
+/* Correct attention-check answers, computed from a group's members. */
+function groupExpected(members){
+  let agree=0, disagree=0, very=0, somewhat=0;
+  members.forEach(function(m){
+    if(m[0] > 0) agree++; else if(m[0] < 0) disagree++;
+    if(m[1] === 2) very++; else if(m[1] === 1) somewhat++;
+  });
+  return {
+    agree: agree > disagree ? "agreement" : (disagree > agree ? "disagreement" : "even"),
+    strength: very > somewhat ? "very" : (somewhat > very ? "somewhat" : "even")
+  };
+}
+
+/* An example screen that doubles as a gated attention check (both questions).
+   A wrong answer on either question terminates the study. */
+function pushExampleCheck(ctx, introText, tag){
+  const expected = groupExpected(ctx.displayMembers);
+  timeline.push({
+    type: jsPsychSurveyMultiChoice,
+    preamble: instrScreen(introText, ctx, { showPeople:true, revealMsg:"" }),
+    questions: [
+      { prompt: "Among this group, do more people lean toward agreement or disagreement with the target statement?",
+        name: "ac_agree", required: true,
+        options: ["More lean toward agreement", "More lean toward disagreement", "Even split"] },
+      { prompt: "Among this group, do more people hold their opinion somewhat strongly or very strongly?",
+        name: "ac_strength", required: true,
+        options: ["More hold their opinion somewhat strongly", "More hold their opinion very strongly", "Even split"] }
+    ],
+    data: { trial_tag: tag, ac_expected_agree: expected.agree, ac_expected_strength: expected.strength },
+    on_finish: function(d){
+      const a = d.response.ac_agree, s = d.response.ac_strength;
+      d.ac_agree_response = a.indexOf("disagreement") > -1 ? "disagreement"
+                          : (a.indexOf("agreement") > -1 ? "agreement" : "even");
+      d.ac_strength_response = s.indexOf("very strongly") > -1 ? "very"
+                             : (s.indexOf("somewhat") > -1 ? "somewhat" : "even");
+      d.ac_agree_correct = (d.ac_agree_response === d.ac_expected_agree);
+      d.ac_strength_correct = (d.ac_strength_response === d.ac_expected_strength);
+      d.ac_correct = d.ac_agree_correct && d.ac_strength_correct;
+      if(!d.ac_correct){ d.terminated = true; terminateStudy(); }
+      else { d.terminated = false; }
+    }
+  });
+}
+
+pushExampleCheck(EX_Q1, "For example, here's how a group of 4 people responded to this questionnaire.", "instructions_check_1");
+pushExampleCheck(EX_Q2, "Here is how a group of 5 people responded to a different questionnaire.", "instructions_check_2");
+
+/* ---------- Lead-in to the "answers" (the rater estimates) ---------- */
+timeline.push({
+  type: jsPsychHtmlButtonResponse,
+  stimulus: `<div class="wrap" style="text-align:center">
+      <p class="lead" style="white-space:nowrap">In a previous survey, we asked people the following question about each group:</p>
+      <p class="lead"><strong>"What is this group's average opinion of the target issue?"</strong></p>
+      <p>People could respond with any number from ${MINUS}2 to 2.</p>
+      <p>Continue to see some examples of the responses people gave.</p>
+    </div>`,
+  choices: ["Continue"],
+  data: { trial_tag: "instructions_answers_intro" }
+});
+
+/* ---------- Answer-comprehension examples (look like the accuracy screens) ----------
+   Fixed example groups with shown rater answers; participants judge a True/False
+   statement about each person's answer. A false statement is wrong in DIRECTION
+   (agree vs. disagree), not merely in degree. Wrong on either -> terminate. */
+const EX_R1 = {
+  statement: "The town should add a new bike lane downtown.",
+  displayMembers: [[1,2],[2,1],[0,1],[-1,2]],
+  displayedA: 1, displayedB: -1
+};
+const EX_R2 = {
+  statement: "Stores should be required to close on holidays.",
+  displayMembers: [[-2,2],[-1,1],[-2,1],[0,2],[1,1]],
+  displayedA: -2, displayedB: 1
+};
+
+/* Verbal descriptor of a numeric answer, for the "the group ___" frame. */
+const GROUP_PHRASE = {
+  "-2": "disagrees", "-1": "slightly disagrees",
+  "0": "neither agrees nor disagrees",
+  "1": "slightly agrees", "2": "agrees"
+};
+
+/* Descriptor that matches the value (makeTrue) or flips its direction (false). */
+function tfDescriptor(value, makeTrue){
+  let v = value;
+  if(!makeTrue){
+    v = value > 0 ? -Math.abs(value) : (value < 0 ? Math.abs(value) : 2); // opposite side
+  }
+  return GROUP_PHRASE[String(v)];
+}
+
+/* Example screen + two True/False comprehension checks. */
+function pushTrueFalseCheck(ctx, p1True, p2True, tag){
+  const phrase1 = tfDescriptor(ctx.displayedA, p1True);
+  const phrase2 = tfDescriptor(ctx.displayedB, p2True);
+  timeline.push({
+    type: jsPsychSurveyMultiChoice,
+    preamble: contextHTML(ctx, { showGroup:true, showSummaries:true }),
+    questions: [
+      { prompt: `Person 1 answered that the group ${phrase1} with the target statement on average.`,
+        name: "tf_A", required: true, options: ["True", "False"] },
+      { prompt: `Person 2 answered that the group ${phrase2} with the target statement on average.`,
+        name: "tf_B", required: true, options: ["True", "False"] }
+    ],
+    data: { trial_tag: tag,
+            tf_correct_A: p1True ? "True" : "False", tf_phrase_A: phrase1,
+            tf_correct_B: p2True ? "True" : "False", tf_phrase_B: phrase2 },
+    on_finish: function(d){
+      d.tf_A_correct = (d.response.tf_A === d.tf_correct_A);
+      d.tf_B_correct = (d.response.tf_B === d.tf_correct_B);
+      d.tf_correct = d.tf_A_correct && d.tf_B_correct;
+      if(!d.tf_correct){ d.terminated = true; terminateStudy(); }
+      else { d.terminated = false; }
+    }
+  });
+}
+// Round 1: Person 1 true, Person 2 false.  Round 2: Person 1 false, Person 2 true.
+pushTrueFalseCheck(EX_R1, true,  false, "instructions_answercheck_1");
+pushTrueFalseCheck(EX_R2, false, true,  "instructions_answercheck_2");
+
+/* ---------- Transition into the accuracy-rating task ---------- */
+timeline.push({
+  type: jsPsychHtmlButtonResponse,
+  stimulus: `<div class="wrap" style="text-align:center">
+      <p class="lead">You're ready to begin.</p>
+      <p style="white-space:nowrap">From now on, you'll see more answers that other participants gave about different groups.</p>
+      <p>This time, instead of reporting what each answer was, your job is to rate how
+      <strong>accurate</strong> each answer is &mdash; that is, how accurately it describes the group's average opinion.</p>
+      <p>Click <strong>Begin</strong> to start.</p>
+    </div>`,
+  choices: ["Begin"],
+  data: { trial_tag: "instructions_accuracy_intro" }
+});
+
+/* ---------- Per-issue blocks ---------- */
+const issueOrder = jsPsych.randomization.shuffle(ISSUES);
+
+issueOrder.forEach(function(issue, issueIndex){
+  // Draw one cell independently for this issue (repeats across issues allowed).
+  const cell = randChoice(CELLS);
+  const stylizedDrawn = randChoice(cell.stylized);
+  const aIsSimple = Math.random() < 0.5;
+
+  const simpleVal = cell.simple;
+  const weightedVal = stylizedDrawn;
+  const displayedA = aIsSimple ? simpleVal : weightedVal;
+  const displayedB = aIsSimple ? weightedVal : simpleVal;
+
+  // Shuffle member order for display only (does not affect any value).
+  const displayMembers = jsPsych.randomization.shuffle(cell.members.slice());
+
+  const ctx = {
+    statement: issue.statement,
+    displayMembers: displayMembers,
+    displayedA: displayedA,
+    displayedB: displayedB
+  };
+
+  // Data block attached to every trial in this issue, so analysis decodes
+  // A/B -> simple/weighted regardless of the cosmetic label.
+  const blockData = {
+    issue: issue.key,
+    issue_position_in_session: issueIndex + 1,
+    cell_id: cell.id,
+    set: cell.set, mean: cell.mean, n: cell.n, skew: cell.skew,
+    members: JSON.stringify(cell.members),
+    simple_value: simpleVal,
+    weighted_value: weightedVal,
+    stylized_drawn: stylizedDrawn,
+    a_is_simple: aIsSimple,
+    displayed_A: displayedA,
+    displayed_B: displayedB
+  };
+
+  /* 1. Stimulus */
+  timeline.push({
+    type: jsPsychHtmlButtonResponse,
+    stimulus: `${contextHTML(ctx, { showGroup:true, showSummaries:false })}
+      <p class="hint">Take a moment to look over the questionnaire and the group's responses, then continue.</p>`,
+    choices: ["Continue"],
+    data: Object.assign({ trial_tag: "stimulus" }, blockData)
+  });
+
+  /* Summaries introduced + primary accuracy ratings (A then B) */
+  timeline.push({
+    type: jsPsychSurveyLikert,
+    preamble: contextHTML(ctx, { showGroup:true, showSummaries:true }),
+    randomize_question_order: false,
+    questions: [
+      { prompt: "How accurate is <strong>Person 1's</strong> answer?", labels: ACC_LABELS, required: true, name: "acc_A" },
+      { prompt: "How accurate is <strong>Person 2's</strong> answer?", labels: ACC_LABELS, required: true, name: "acc_B" }
+    ],
+    data: Object.assign({ trial_tag: "accuracy" }, blockData),
+    on_finish: function(d){
+      const accA = d.response.acc_A + 1; // labels are 0-indexed
+      const accB = d.response.acc_B + 1;
+      d.acc_A_raw = accA;
+      d.acc_B_raw = accB;
+      d.acc_simple   = d.a_is_simple ? accA : accB;
+      d.acc_weighted = d.a_is_simple ? accB : accA;
+    }
+  });
+
+  /* 5. Comparative (bipolar A <-> B) */
+  timeline.push({
+    type: jsPsychSurveyLikert,
+    preamble: contextHTML(ctx, { showGroup:true, showSummaries:true }),
+    questions: [{
+      prompt: "Overall, whose answer is more accurate?",
+      labels: bipolarLabels("Person 1 is much<br>more accurate", "Person 2 is much<br>more accurate"),
+      required: true, name: "comp"
+    }],
+    data: Object.assign({ trial_tag: "comparative" }, blockData),
+    on_finish: function(d){
+      const r = d.response.comp + 1;        // 1..7, 4 = equally
+      d.comp_raw = r;                        // in displayed A/B terms
+      d.comp_toward_weighted = d.a_is_simple ? r : (8 - r); // 1..7, 7 = toward weighted
+      // Set piping sentence for the open-ended item.
+      if(r < 4)      pipeChoice = { sentence: "You indicated that Person 1's answer was more accurate." };
+      else if(r > 4) pipeChoice = { sentence: "You indicated that Person 2's answer was more accurate." };
+      else           pipeChoice = { sentence: "You indicated that the two answers were equally accurate." };
+    }
+  });
+
+  /* 6. Follow-up measures (downstream of primary, to limit demand) */
+  timeline.push({
+    type: jsPsychSurveyLikert,
+    preamble: contextHTML(ctx, { showGroup:true, showSummaries:true }),
+    randomize_question_order: false,
+    questions: [
+      { name: "descriptive",
+        prompt: "Which answer better captures what most people in the group actually think?",
+        labels: bipolarLabels("Person 1 much<br>more so", "Person 2 much<br>more so"), required: true },
+      { name: "moral",
+        prompt: "Which answer is the fairer representation of the group (i.e., closer to how the group ought to be seen)?",
+        labels: bipolarLabels("Person 1 much<br>more so", "Person 2 much<br>more so"), required: true },
+      { name: "predictive",
+        prompt: "If this group were going to take collective action on this issue, which answer would better help you anticipate what the group would do?",
+        labels: bipolarLabels("Person 1 much<br>more so", "Person 2 much<br>more so"), required: true }
+    ],
+    data: Object.assign({ trial_tag: "followups" }, blockData),
+    on_finish: function(d){
+      ["descriptive","moral","predictive"].forEach(function(k){
+        const r = d.response[k] + 1; // 1..7
+        d[k+"_raw"] = r;
+        d[k+"_toward_weighted"] = d.a_is_simple ? r : (8 - r);
+      });
+    }
+  });
+
+  /* 7. Open-ended (piped from the comparative choice) */
+  timeline.push({
+    type: jsPsychSurveyText,
+    preamble: function(){
+      return `<div class="wrap"><p>${pipeChoice.sentence}</p></div>`;
+    },
+    questions: [{
+      prompt: "Briefly, why?",
+      name: "open_reason",
+      rows: 4, columns: 60, required: false
+    }],
+    data: Object.assign({ trial_tag: "open_ended" }, blockData)
+  });
+});
+
+/* ---------- Demographics ---------- */
+timeline.push({
+  type: jsPsychSurveyText,
+  preamble: `<div class="wrap"><h2>A few questions about you</h2></div>`,
+  questions: [{ prompt: "What is your age?", name: "age", rows: 1, columns: 6, required: true }],
+  data: { trial_tag: "demographics_age" }
+});
+timeline.push({
+  type: jsPsychSurveyMultiChoice,
+  questions: [
+    { prompt: "What is your gender?", name: "gender", required: true,
+      options: ["Woman", "Man", "Non-binary", "Prefer to self-describe", "Prefer not to say"] }
+  ],
+  data: { trial_tag: "demographics_gender" }
+});
+timeline.push({
+  type: jsPsychSurveyLikert,
+  questions: [{
+    prompt: "In general, how would you describe your political views?",
+    name: "ideology",
+    labels: ["Extremely<br>liberal","Liberal","Slightly<br>liberal","Moderate","Slightly<br>conservative","Conservative","Extremely<br>conservative"],
+    required: true
+  }],
+  data: { trial_tag: "demographics_ideology" },
+  on_finish: function(d){ d.ideology_1to7 = d.response.ideology + 1; }
+});
+
+/* ---------- Completion / debrief ----------
+   Written for the real-data framing. If you switch to hypothetical framing,
+   replace this with a deception debrief explaining the vignettes were constructed. */
+timeline.push({
+  type: jsPsychHtmlButtonResponse,
+  stimulus: `<div class="wrap">
+      <h2>Thank you</h2>
+      <p>That's the end of the study. We appreciate your time and careful responses.</p>
+      ${SETTINGS.completion_url ? "<p>Click below to return and register your completion.</p>" : ""}
+    </div>`,
+  choices: SETTINGS.completion_url ? ["Finish"] : ["Done"],
+  data: { trial_tag: "debrief" }
+});
+
+jsPsych.run(timeline);
+</script>
+</html>
