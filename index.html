@@ -256,6 +256,28 @@ const CELLS = [
   { id:"S6_R", set:6, mean:1,  n:5, skew:"Right", members:[[-1,1],[1,1],[1,1],[2,2],[2,2]],             simple:1.0,  stylized:[1.1,1.2] }
 ];
 
+/* ---------- Half-mean (.5) stimulus cells ----------
+   simple (unweighted) mean = X.5 and stylized (weighted) = X.5 +/- 0.1, so BOTH
+   shown numbers are one-decimal and equally precise-looking. This decouples
+   "non-integer format" from "which estimate is the weighted one", which is a
+   confound in the integer cells (there the weighted answer is always the only
+   non-integer). An unweighted mean of X.5 is only possible at even n, so every
+   half-cell is n=4; they are drawn only within the n=4 stratum (see the
+   per-issue draw below), which keeps the .5-vs-integer contrast matched on n. */
+const HALF_CELLS = [
+  { id:"H7_L", set:7, mean:0.5,  n:4, skew:"Left",  members:[[2,1],[1,1],[0,2],[-1,1]],  simple:0.5,  stylized:[0.4] },
+  { id:"H7_S", set:7, mean:0.5,  n:4, skew:"Same",  members:[[2,1],[1,1],[0,1],[-1,1]],  simple:0.5,  stylized:[0.4,0.6] },
+  { id:"H7_R", set:7, mean:0.5,  n:4, skew:"Right", members:[[2,1],[1,2],[0,1],[-1,1]],  simple:0.5,  stylized:[0.6] },
+
+  { id:"H8_L", set:8, mean:-0.5, n:4, skew:"Left",  members:[[-2,1],[-1,2],[0,1],[1,1]], simple:-0.5, stylized:[-0.6] },
+  { id:"H8_S", set:8, mean:-0.5, n:4, skew:"Same",  members:[[-2,1],[-1,1],[0,1],[1,1]], simple:-0.5, stylized:[-0.4,-0.6] },
+  { id:"H8_R", set:8, mean:-0.5, n:4, skew:"Right", members:[[-2,1],[-1,1],[0,2],[1,1]], simple:-0.5, stylized:[-0.4] }
+];
+
+/* Integer cells split by group size for the nested per-issue draw. */
+const INT_CELLS_N4 = CELLS.filter(c => c.n === 4);
+const INT_CELLS_N5 = CELLS.filter(c => c.n === 5);
+
 /* ---------- Label maps ---------- */
 const POS_LABELS = { "-2":"Disagree", "-1":"Slightly disagree", "0":"Neither agree nor disagree", "1":"Slightly agree", "2":"Agree" };
 const STR_LABELS = { "1":"Somewhat strongly", "2":"Very strongly" };
@@ -355,8 +377,9 @@ function groupVizHTML(ctx, opts){
   let html = paperCardHTML(ctx);
   if(o.showPeople){
     const n = ctx.displayMembers.length;
+    const who = ctx.groupLabel ? `${ctx.groupLabel}: ${n} people` : `A group of ${n} people`;
     const msg = (o.revealMsg !== null) ? o.revealMsg
-      : `A group of ${n} people responded to the survey above. Here are their answers.`;
+      : `${who} responded to the survey above. Here are their answers.`;
     html += peopleRevealHTML(ctx, msg);
   }
   return `<div class="paper-viz">${html}</div>`;
@@ -365,7 +388,7 @@ function groupVizHTML(ctx, opts){
 function summariesHTML(ctx){
   return `
     <div class="raters">
-      <div class="raters-intro">Two people were shown this group and asked:</div>
+      <div class="raters-intro">Two people were shown ${ctx.groupLabel || "this group"} and asked:</div>
       <div class="raters-question">What is this group's average opinion of the target issue?</div>
       <div class="raters-cards">
         <div class="rater-card">
@@ -631,8 +654,20 @@ timeline.push({
 const issueOrder = jsPsych.randomization.shuffle(ISSUES);
 
 issueOrder.forEach(function(issue, issueIndex){
-  // Draw one cell independently for this issue (repeats across issues allowed).
-  const cell = randChoice(CELLS);
+  // Each issue is a distinct group, numbered by the order the participant sees it.
+  const groupNumber = issueIndex + 1;
+  const groupLabel = "Group " + groupNumber;
+
+  // Draw one cell for this issue (repeats across issues allowed). Group size is
+  // 50/50 n=4 vs n=5, preserving the original balance. Within n=4, .5-mean and
+  // integer-mean cells are equally likely; n=5 is always integer (a .5 unweighted
+  // mean is impossible at odd n). Net: .5 cells are ~25% of trials overall and the
+  // .5-vs-integer contrast is matched on group size.
+  const n4 = Math.random() < 0.5;
+  const useHalf = n4 && Math.random() < 0.5;
+  const cell = useHalf ? randChoice(HALF_CELLS)
+             : n4      ? randChoice(INT_CELLS_N4)
+             :           randChoice(INT_CELLS_N5);
   const stylizedDrawn = randChoice(cell.stylized);
   const aIsSimple = Math.random() < 0.5;
 
@@ -648,7 +683,8 @@ issueOrder.forEach(function(issue, issueIndex){
     statement: issue.statement,
     displayMembers: displayMembers,
     displayedA: displayedA,
-    displayedB: displayedB
+    displayedB: displayedB,
+    groupLabel: groupLabel
   };
 
   // Data block attached to every trial in this issue, so analysis decodes
@@ -656,12 +692,15 @@ issueOrder.forEach(function(issue, issueIndex){
   const blockData = {
     issue: issue.key,
     issue_position_in_session: issueIndex + 1,
+    group_number: groupNumber,
     cell_id: cell.id,
     set: cell.set, mean: cell.mean, n: cell.n, skew: cell.skew,
     members: JSON.stringify(cell.members),
     simple_value: simpleVal,
     weighted_value: weightedVal,
     stylized_drawn: stylizedDrawn,
+    simple_type: useHalf ? "half" : "integer",
+    simple_is_half: useHalf,
     a_is_simple: aIsSimple,
     displayed_A: displayedA,
     displayed_B: displayedB
@@ -671,7 +710,7 @@ issueOrder.forEach(function(issue, issueIndex){
   timeline.push({
     type: jsPsychHtmlButtonResponse,
     stimulus: `${contextHTML(ctx, { showGroup:true, showSummaries:false })}
-      <p class="hint">Take a moment to look over the questionnaire and the group's responses, then continue.</p>`,
+      <p class="hint">Take a moment to look over the questionnaire and ${groupLabel}'s responses, then continue.</p>`,
     choices: ["Continue"],
     data: Object.assign({ trial_tag: "stimulus" }, blockData)
   });
@@ -724,13 +763,13 @@ issueOrder.forEach(function(issue, issueIndex){
     randomize_question_order: false,
     questions: [
       { name: "descriptive",
-        prompt: "Which answer better captures what most people in the group actually think?",
+        prompt: `Which answer better captures what most people in ${groupLabel} actually think?`,
         labels: bipolarLabels("Person 1 much<br>more so", "Person 2 much<br>more so"), required: true },
       { name: "moral",
-        prompt: "Which answer is the fairer representation of the group (i.e., closer to how the group ought to be seen)?",
+        prompt: `Which answer is the fairer representation of ${groupLabel} (i.e., closer to how ${groupLabel} ought to be seen)?`,
         labels: bipolarLabels("Person 1 much<br>more so", "Person 2 much<br>more so"), required: true },
       { name: "predictive",
-        prompt: "If this group were going to take collective action on this issue, which answer would better help you anticipate what the group would do?",
+        prompt: `If ${groupLabel} were going to take collective action on this issue, which answer would better help you anticipate what ${groupLabel} would do?`,
         labels: bipolarLabels("Person 1 much<br>more so", "Person 2 much<br>more so"), required: true }
     ],
     data: Object.assign({ trial_tag: "followups" }, blockData),
