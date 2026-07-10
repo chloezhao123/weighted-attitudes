@@ -23,12 +23,15 @@
       --panel: #f6f8fa;
       --accent: #2c5f8a;
 
-      /* Color coding for the two member questions. Change these to recolor
-         the opinion / intensity items on the paper AND the numbers on people. */
+      /* Opinion coding: the paper's opinion question and the histogram x-axis. */
       --c-opinion: #1f6f8b;        /* teal-blue: opinion / extremity */
       --c-opinion-soft: #bcd9e2;
-      --c-intensity: #c2701c;      /* amber: intensity / strength */
-      --c-intensity-soft: #ecd2ab;
+      /* Intensity coding shared by the paper's two intensity OPTIONS and the
+         histogram segments: blue = somewhat strongly, orange = very strongly. */
+      --c-int-low: #3468c0;        /* blue: somewhat strongly (1) */
+      --c-int-low-soft: #c6d6f0;
+      --c-int-high: #c2701c;       /* orange: very strongly (2) */
+      --c-int-high-soft: #ecd2ab;
     }
     .jspsych-display-element { font-size: 16px; color: var(--ink); }
     .jspsych-content { max-width: 760px; }
@@ -125,7 +128,7 @@
     .qblock:last-child { margin-bottom: 0; }
     .qtext { font-size: 14px; font-weight: 600; margin-bottom: 9px; line-height: 1.4; }
     .q-opinion .qtext { color: var(--c-opinion); }
-    .q-intensity .qtext { color: var(--c-intensity); }
+    .q-intensity .qtext { color: var(--ink); }
 
     .scale { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
     .scale .opt {
@@ -136,10 +139,12 @@
     .scale-opinion .opt { flex: 1 1 0; min-width: 0; }
     .scale-intensity .opt { flex: 0 1 130px; }
     .scale-opinion .opt { border-color: var(--c-opinion-soft); }
-    .scale-intensity .opt { border-color: var(--c-intensity-soft); }
+    .scale-intensity .opt-int-1 { border-color: var(--c-int-low-soft); }
+    .scale-intensity .opt-int-2 { border-color: var(--c-int-high-soft); }
     .opt-num { display: block; font-size: 16px; font-weight: 800; line-height: 1; }
     .scale-opinion .opt-num { color: var(--c-opinion); }
-    .scale-intensity .opt-num { color: var(--c-intensity); }
+    .scale-intensity .opt-int-1 .opt-num { color: var(--c-int-low); }
+    .scale-intensity .opt-int-2 .opt-num { color: var(--c-int-high); }
     .opt-lab {
       display: block; font-size: 10px; color: var(--muted);
       margin-top: 5px; line-height: 1.2;
@@ -150,29 +155,34 @@
     .reveal-msg {
       font-size: 15px; color: var(--ink); margin-bottom: 14px;
     }
-    .group-people {
-      display: flex; flex-wrap: wrap; gap: 16px 24px; justify-content: center;
+    /* Histogram of the group's answers: one block per person, stacked at their
+       opinion; block color = intensity (blue somewhat / orange very). */
+    .hist-plot {
+      display: flex; gap: 14px; justify-content: center; align-items: flex-end;
+      min-height: 84px; padding: 0 6px;
+      border-bottom: 2px solid #aab4bd;
+      width: max-content; margin: 0 auto;
     }
-    .person { display: inline-flex; align-items: center; gap: 4px; }
-    .person svg { width: 50px; height: 58px; display: block; flex: none; }
-    .person .sil { fill: #c7cfd7; }
-    .person .nums { display: flex; flex-direction: column; gap: 4px; }
-    .person .num {
-      background: #fff; border: 1px solid var(--line); border-radius: 6px;
-      padding: 1px 9px; min-width: 1.6em; text-align: center;
-      font-weight: 800; font-size: 20px; line-height: 1.4;
+    .hist-stack { display: flex; flex-direction: column-reverse; gap: 3px; width: 64px; }
+    .hist-stack .seg { height: 24px; border-radius: 4px; }
+    .seg-lo { background: var(--c-int-low); }
+    .seg-hi { background: var(--c-int-high); }
+    .hist-labels {
+      display: flex; gap: 14px; justify-content: center;
+      width: max-content; margin: 6px auto 0; padding: 0 6px;
     }
-    .person .num-op { color: var(--c-opinion); border-color: var(--c-opinion-soft); }
-    .person .num-in { color: var(--c-intensity); border-color: var(--c-intensity-soft); }
-
-    .people-key {
-      display: flex; gap: 14px; margin-top: 14px; justify-content: center;
-      font-size: 12px; color: var(--muted);
+    .hist-labels .hist-x {
+      width: 64px; font-weight: 800; font-size: 16px; color: var(--c-opinion);
     }
-    .people-key span { display: inline-flex; align-items: center; gap: 5px; }
-    .people-key .dot { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
-    .people-key .dot.op { background: var(--c-opinion); }
-    .people-key .dot.in { background: var(--c-intensity); }
+    .hist-caption { font-size: 12px; color: var(--muted); margin-top: 10px; }
+    .hist-key {
+      display: flex; gap: 16px; margin-top: 6px; justify-content: center;
+      font-size: 12px; color: var(--muted); flex-wrap: wrap;
+    }
+    .hist-key span { display: inline-flex; align-items: center; gap: 5px; }
+    .hist-key .dot { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
+    .hist-key .dot.lo { background: var(--c-int-low); }
+    .hist-key .dot.hi { background: var(--c-int-high); }
 
     /* Keep the rating (Likert) scales at the bottom to a narrower width */
     .jspsych-survey-likert-opts { max-width: 520px; margin-left: auto; margin-right: auto; }
@@ -317,26 +327,29 @@ function opinionScaleHTML(){
 }
 function intensityScaleHTML(){
   const opts = [1,2].map(v => `
-    <div class="opt">
+    <div class="opt opt-int-${v}">
       <span class="opt-num">${v}</span>
       <span class="opt-lab">${STR_LABELS[String(v)]}</span>
     </div>`).join("");
   return `<div class="scale scale-intensity">${opts}</div>`;
 }
 
-/* A single group member: a person icon with their two answers overlaid,
-   color-coded to match the two questions on the paper. */
-function personHTML(pos, w){
-  return `<div class="person">
-      <svg viewBox="0 0 78 84" aria-hidden="true">
-        <circle class="sil" cx="39" cy="20" r="14"/>
-        <path class="sil" d="M39,37 C23,37 14,51 14,78 L64,78 C64,51 55,37 39,37 Z"/>
-      </svg>
-      <div class="nums">
-        <span class="num num-op">${fmtInt(pos)}</span>
-        <span class="num num-in">${w}</span>
-      </div>
-    </div>`;
+/* Histogram of the group's answers: five bins (−2..+2 on the x-axis). Each
+   person is one rectangular segment stacked at their opinion; segment color
+   codes intensity (blue = somewhat strongly, orange = very strongly), with
+   very-strongly segments at the bottom of each stack. */
+function histogramHTML(members){
+  const stacks = [-2,-1,0,1,2].map(function(v){
+    const segs = members
+      .filter(m => m[0] === v)
+      .sort((a,b) => b[1] - a[1])   // intense first => bottom (column-reverse)
+      .map(m => `<span class="seg ${m[1] === 2 ? "seg-hi" : "seg-lo"}"></span>`)
+      .join("");
+    return `<div class="hist-stack">${segs}</div>`;
+  }).join("");
+  const labels = [-2,-1,0,1,2].map(v => `<span class="hist-x">${fmtInt(v)}</span>`).join("");
+  return `<div class="hist-plot">${stacks}</div>
+    <div class="hist-labels">${labels}</div>`;
 }
 
 /* Just the questionnaire "paper": statement + the two color-coded scales. */
@@ -355,16 +368,17 @@ function paperCardHTML(ctx){
     </div>`;
 }
 
-/* The group members revealed below the paper, with an optional message. */
+/* The group's answers revealed below the paper as a histogram, with an
+   optional message. */
 function peopleRevealHTML(ctx, msg){
-  const people = ctx.displayMembers.map(m => personHTML(m[0], m[1])).join("");
   const msgHTML = msg ? `<div class="reveal-msg">${msg}</div>` : "";
   return `<div class="group-reveal">
       ${msgHTML}
-      <div class="group-people">${people}</div>
-      <div class="people-key">
-        <span><span class="dot op"></span>opinion</span>
-        <span><span class="dot in"></span>strength</span>
+      ${histogramHTML(ctx.displayMembers)}
+      <div class="hist-caption">Each block is one person, placed at their opinion of the target statement.</div>
+      <div class="hist-key">
+        <span><span class="dot lo"></span>feels somewhat strongly</span>
+        <span><span class="dot hi"></span>feels very strongly</span>
       </div>
     </div>`;
 }
