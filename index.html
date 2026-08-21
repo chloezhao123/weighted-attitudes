@@ -23,15 +23,15 @@
       --panel: #f6f8fa;
       --accent: #2c5f8a;
 
-      /* Opinion coding: the paper's opinion question and the histogram x-axis. */
-      --c-opinion: #1f6f8b;        /* teal-blue: opinion / extremity */
-      --c-opinion-soft: #bcd9e2;
+      /* Opinion is neutral so color is reserved exclusively for intensity. */
+      --c-opinion: #4f5963;
+      --c-opinion-soft: #c9cfd5;
       /* Intensity coding shared by the paper's two intensity OPTIONS and the
-         histogram segments: blue = somewhat strongly, orange = very strongly. */
-      --c-int-low: #3468c0;        /* blue: somewhat strongly (1) */
-      --c-int-low-soft: #c6d6f0;
-      --c-int-high: #c2701c;       /* orange: very strongly (2) */
-      --c-int-high-soft: #ecd2ab;
+         histogram segments: light blue = somewhat, dark blue = very. */
+      --c-int-low: #b9d8f2;
+      --c-int-low-border: #78acd5;
+      --c-int-high: #245786;
+      --c-int-high-border: #173f63;
     }
     .jspsych-display-element { font-size: 16px; color: var(--ink); }
     .jspsych-content { max-width: 760px; }
@@ -139,24 +139,40 @@
     .scale-opinion .opt { flex: 1 1 0; min-width: 0; }
     .scale-intensity .opt { flex: 0 1 130px; }
     .scale-opinion .opt { border-color: var(--c-opinion-soft); }
-    .scale-intensity .opt-int-1 { border-color: var(--c-int-low-soft); }
-    .scale-intensity .opt-int-2 { border-color: var(--c-int-high-soft); }
+    .scale-intensity .opt-int-1 {
+      background: var(--c-int-low); border-color: var(--c-int-low-border); color: var(--ink);
+    }
+    .scale-intensity .opt-int-2 {
+      background: var(--c-int-high); border-color: var(--c-int-high-border); color: #fff;
+    }
     .opt-num { display: block; font-size: 16px; font-weight: 800; line-height: 1; }
     .scale-opinion .opt-num { color: var(--c-opinion); }
-    .scale-intensity .opt-int-1 .opt-num { color: var(--c-int-low); }
-    .scale-intensity .opt-int-2 .opt-num { color: var(--c-int-high); }
+    .scale-intensity .opt .opt-num {
+      display: inline; font-size: 12px; font-weight: 700; opacity: .82;
+    }
+    .scale-intensity .opt-int-1 .opt-num { color: var(--ink); }
+    .scale-intensity .opt-int-2 .opt-num { color: #fff; }
     .opt-lab {
       display: block; font-size: 10px; color: var(--muted);
       margin-top: 5px; line-height: 1.2;
+    }
+    .scale-intensity .opt .opt-lab {
+      display: inline; margin: 0 6px 0 0; font-size: 12px; font-weight: 700; color: inherit;
     }
 
     /* The group members, revealed below the paper */
     .group-reveal { margin-top: 18px; text-align: center; }
     .reveal-msg {
-      font-size: 15px; color: var(--ink); margin-bottom: 14px;
+      font-size: 14px; color: var(--muted); margin-bottom: 14px;
+    }
+    .group-badge {
+      display: block; width: max-content; margin: 0 auto 5px;
+      padding: 5px 13px; border-radius: 999px;
+      background: var(--ink); color: #fff;
+      font-size: 16px; font-weight: 800; letter-spacing: .02em;
     }
     /* Histogram of the group's answers: one block per person, stacked at their
-       opinion; block color = intensity (blue somewhat / orange very). */
+       opinion; block shade = intensity (light blue somewhat / dark blue very). */
     .hist-plot {
       display: flex; gap: 14px; justify-content: center; align-items: flex-end;
       min-height: 84px; padding: 0 6px;
@@ -328,15 +344,15 @@ function opinionScaleHTML(){
 function intensityScaleHTML(){
   const opts = [1,2].map(v => `
     <div class="opt opt-int-${v}">
-      <span class="opt-num">${v}</span>
       <span class="opt-lab">${STR_LABELS[String(v)]}</span>
+      <span class="opt-num">(${v})</span>
     </div>`).join("");
   return `<div class="scale scale-intensity">${opts}</div>`;
 }
 
 /* Histogram of the group's answers: five bins (−2..+2 on the x-axis). Each
    person is one rectangular segment stacked at their opinion; segment color
-   codes intensity (blue = somewhat strongly, orange = very strongly), with
+   codes intensity (light blue = somewhat strongly, dark blue = very strongly), with
    very-strongly segments at the bottom of each stack. */
 function histogramHTML(members){
   const stacks = [-2,-1,0,1,2].map(function(v){
@@ -371,14 +387,18 @@ function paperCardHTML(ctx){
 /* The group's answers revealed below the paper as a histogram, with an
    optional message. */
 function peopleRevealHTML(ctx, msg){
-  const msgHTML = msg ? `<div class="reveal-msg">${msg}</div>` : "";
+  const groupName = ctx.groupLabel || "Example group";
+  const detail = msg ? msg.replace(/^.*?:\s*/, "") : "";
+  const msgHTML = msg ? `<div class="reveal-msg">
+      <span class="group-badge">${groupName}</span>${detail}
+    </div>` : "";
   return `<div class="group-reveal">
       ${msgHTML}
       ${histogramHTML(ctx.displayMembers)}
       <div class="hist-caption">Each block is one person, placed at their opinion of the target statement.</div>
       <div class="hist-key">
-        <span><span class="dot lo"></span>feels somewhat strongly</span>
-        <span><span class="dot hi"></span>feels very strongly</span>
+        <span><span class="dot lo"></span>somewhat strongly (1)</span>
+        <span><span class="dot hi"></span>very strongly (2)</span>
       </div>
     </div>`;
 }
@@ -629,9 +649,9 @@ function pushTrueFalseCheck(ctx, p1True, p2True, tag){
     type: jsPsychSurveyMultiChoice,
     preamble: contextHTML(ctx, { showGroup:true, showSummaries:true }),
     questions: [
-      { prompt: `Person 1 answered that the group ${phrase1} with the target statement on average.`,
+      { prompt: `Person 1 answered <strong>${fmtVal(ctx.displayedA)}</strong>, indicating that the group <strong>${phrase1}</strong> with the target statement on average.`,
         name: "tf_A", required: true, options: ["True", "False"] },
-      { prompt: `Person 2 answered that the group ${phrase2} with the target statement on average.`,
+      { prompt: `Person 2 answered <strong>${fmtVal(ctx.displayedB)}</strong>, indicating that the group <strong>${phrase2}</strong> with the target statement on average.`,
         name: "tf_B", required: true, options: ["True", "False"] }
     ],
     data: { trial_tag: tag,
