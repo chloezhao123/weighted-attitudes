@@ -148,7 +148,8 @@
     .opt-num { display: block; font-size: 16px; font-weight: 800; line-height: 1; }
     .scale-opinion .opt-num { color: var(--c-opinion); }
     .scale-intensity .opt .opt-num {
-      display: inline; font-size: 12px; font-weight: 700; opacity: .82;
+      display: block; margin-top: 5px;
+      font-size: 12px; font-weight: 700; opacity: .82;
     }
     .scale-intensity .opt-int-1 .opt-num { color: var(--ink); }
     .scale-intensity .opt-int-2 .opt-num { color: #fff; }
@@ -157,7 +158,7 @@
       margin-top: 5px; line-height: 1.2;
     }
     .scale-intensity .opt .opt-lab {
-      display: inline; margin: 0 6px 0 0; font-size: 12px; font-weight: 700; color: inherit;
+      display: block; margin: 0; font-size: 12px; font-weight: 700; color: inherit;
     }
 
     /* The group members, revealed below the paper */
@@ -641,7 +642,8 @@ function tfDescriptor(value, makeTrue){
   return GROUP_PHRASE[String(v)];
 }
 
-/* Example screen + two True/False comprehension checks. */
+/* Example screen + four True/False comprehension checks: for each person,
+   one literal answer-identification item and one interpretation item. */
 function pushTrueFalseCheck(ctx, p1True, p2True, tag){
   const phrase1 = tfDescriptor(ctx.displayedA, p1True);
   const phrase2 = tfDescriptor(ctx.displayedB, p2True);
@@ -649,17 +651,25 @@ function pushTrueFalseCheck(ctx, p1True, p2True, tag){
     type: jsPsychSurveyMultiChoice,
     preamble: contextHTML(ctx, { showGroup:true, showSummaries:true }),
     questions: [
-      { prompt: `Person 1 answered <strong>${fmtVal(ctx.displayedA)}</strong>, indicating that the group <strong>${phrase1}</strong> with the target statement on average.`,
-        name: "tf_A", required: true, options: ["True", "False"] },
-      { prompt: `Person 2 answered <strong>${fmtVal(ctx.displayedB)}</strong>, indicating that the group <strong>${phrase2}</strong> with the target statement on average.`,
-        name: "tf_B", required: true, options: ["True", "False"] }
+      { prompt: `Person 1 answered <strong>${fmtVal(ctx.displayedA)}</strong>.`,
+        name: "tf_value_A", required: true, options: ["True", "False"] },
+      { prompt: `Person 1's answer indicates that the group <strong>${phrase1}</strong> with the target statement on average.`,
+        name: "tf_meaning_A", required: true, options: ["True", "False"] },
+      { prompt: `Person 2 answered <strong>${fmtVal(ctx.displayedB)}</strong>.`,
+        name: "tf_value_B", required: true, options: ["True", "False"] },
+      { prompt: `Person 2's answer indicates that the group <strong>${phrase2}</strong> with the target statement on average.`,
+        name: "tf_meaning_B", required: true, options: ["True", "False"] }
     ],
     data: { trial_tag: tag,
-            tf_correct_A: p1True ? "True" : "False", tf_phrase_A: phrase1,
-            tf_correct_B: p2True ? "True" : "False", tf_phrase_B: phrase2 },
+            tf_value_correct_A: "True", tf_meaning_correct_A: p1True ? "True" : "False", tf_phrase_A: phrase1,
+            tf_value_correct_B: "True", tf_meaning_correct_B: p2True ? "True" : "False", tf_phrase_B: phrase2 },
     on_finish: function(d){
-      d.tf_A_correct = (d.response.tf_A === d.tf_correct_A);
-      d.tf_B_correct = (d.response.tf_B === d.tf_correct_B);
+      d.tf_value_A_correct = (d.response.tf_value_A === d.tf_value_correct_A);
+      d.tf_meaning_A_correct = (d.response.tf_meaning_A === d.tf_meaning_correct_A);
+      d.tf_value_B_correct = (d.response.tf_value_B === d.tf_value_correct_B);
+      d.tf_meaning_B_correct = (d.response.tf_meaning_B === d.tf_meaning_correct_B);
+      d.tf_A_correct = d.tf_value_A_correct && d.tf_meaning_A_correct;
+      d.tf_B_correct = d.tf_value_B_correct && d.tf_meaning_B_correct;
       d.tf_correct = d.tf_A_correct && d.tf_B_correct;
       if(!d.tf_correct){ d.terminated = true; terminateStudy(); }
       else { d.terminated = false; }
