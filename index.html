@@ -868,14 +868,15 @@ timeline.push({
   on_finish: function(d){ d.ideology_1to7 = d.response.ideology + 1; }
 });
 
-/* ---------- Completion / debrief ----------
-   Written for the real-data framing. If you switch to hypothetical framing,
-   replace this with a deception debrief explaining the vignettes were constructed. */
+/* ---------- Completion / deception debrief ---------- */
 timeline.push({
   type: jsPsychHtmlButtonResponse,
   stimulus: `<div class="wrap">
-      <h2>Thank you</h2>
-      <p>That's the end of the study. We appreciate your time and careful responses.</p>
+      <h2>Thank you for participating</h2>
+      <p>Some information about this study was not disclosed before you began. The group responses and the answers attributed to “Person 1” and “Person 2” were constructed by the researchers rather than necessarily being responses from earlier participants.</p>
+      <p>The study examines how people evaluate two ways of describing a group’s average opinion: a simple average, in which each group member counts equally, and an intensity-weighted average, in which strongly held opinions receive more weight. We did not explain this beforehand because knowing the study’s purpose could have influenced your judgments. The deception did not concern your abilities or personal characteristics. Your responses remain valuable regardless of the choices you made.</p>
+      <p>If you have questions about the study or would like to request withdrawal of your data, please contact <a href="mailto:czhao99@stanford.edu">czhao99@stanford.edu</a>. For questions about your rights as a research participant, contact the Stanford Institutional Review Board at <a href="mailto:irbnonmed@stanford.edu">irbnonmed@stanford.edu</a>.</p>
+      <p>Please do not share the study’s purpose with potential participants, as doing so could affect the research results.</p>
       ${SETTINGS.completion_url ? "<p>Click below to return and register your completion.</p>" : ""}
     </div>`,
   choices: SETTINGS.completion_url ? ["Finish"] : ["Done"],
