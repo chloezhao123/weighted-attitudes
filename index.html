@@ -197,13 +197,14 @@
 
     /* Keep the rating (Likert) scales at the bottom to a narrower width */
     .jspsych-survey-likert-opts { max-width: 520px; margin-left: auto; margin-right: auto; }
-    body.study-preview::after {
+    body.study-preview::after, body.study-test::after {
       content: "Preview — no upload or Prolific completion";
       position: fixed; bottom: 0; left: 0; right: 0; z-index: 100;
       padding: 8px; background: #fff3cd; color: #594500;
       font: 14px sans-serif; text-align: center;
     }
-    body.study-preview .jspsych-content { padding-bottom: 50px; }
+    body.study-test::after { content: "DataPipe test — test data uploads; no Prolific completion"; }
+    body.study-preview .jspsych-content, body.study-test .jspsych-content { padding-bottom: 70px; }
     .save-actions { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; }
   </style>
 </head>
@@ -238,21 +239,19 @@ const SETTINGS = {
   study_minutes: 8,
   survey_version: "2026-10-14",
   datapipe_experiment_id: "zUNcXd9EgcNe",
-  // Keep false until the DataPipe setup and Prolific completion URL are verified.
-  // Preview mode never uploads data or follows completion/screen-out redirects.
-  data_collection_enabled: false,
+  // "test" uploads clearly marked test records without Prolific completion.
+  // "preview" never uploads. "live" requires a verified completion_url.
+  // ?preview=1 always disables uploads, including while testing.
+  data_collection_mode: "test",
   // Set to true while testing to dump the data table at the end.
   debug_show_data_at_end: false,
   // Real-data framing per the locked spec. If you switch to hypothetical
   // framing, edit CONSENT_HTML and append a deception debrief.
   completion_url: null,   // e.g. "https://app.prolific.com/submissions/complete?cc=XXXX"
 
-  // Hard terminate (first-issue manipulation check):
+  // Failed instruction checks terminate before saving in every mode.
   screenout_url: null,    // if set, a failed check redirects here (e.g. Prolific screen-out link)
-                          // instead of showing the end message below.
-  terminate_on_ambiguous_cell: true   // default: any failed check terminates, including mean-0
-                                       // ("evenly split") cells. Set to false only if piloting
-                                       // shows elevated misses on balanced cells.
+                          // in live mode only, instead of the closing message.
 };
 
 const ISSUES = [
@@ -468,9 +467,13 @@ function bipolarLabels(leftWord, rightWord){
    Build experiment
    ============================================================ */
 const urlParams = new URLSearchParams(window.location.search);
-const isPreview = !SETTINGS.data_collection_enabled || urlParams.get("preview") === "1";
-const runState = { terminated: false, uploadAccepted: false, debriefCompleted: false };
+const runMode = urlParams.get("preview") === "1" ? "preview" : SETTINGS.data_collection_mode;
+const isPreview = runMode === "preview";
+const isTest = runMode === "test";
+const isLive = runMode === "live";
+const runState = { terminated: false, uploadAccepted: false, uploadStatus: null, uploadFilename: null, debriefCompleted: false };
 if(isPreview) document.body.classList.add("study-preview");
+if(isTest) document.body.classList.add("study-test");
 
 function completionDetails(url){
   if(!url) return null;
@@ -484,13 +487,13 @@ function completionDetails(url){
 }
 const completion = completionDetails(SETTINGS.completion_url);
 function canReturnToProlific(){
-  return !isPreview && !runState.terminated && runState.uploadAccepted &&
+  return isLive && !runState.terminated && runState.uploadAccepted &&
          runState.debriefCompleted && completion !== null;
 }
 
 const jsPsych = initJsPsych({
   on_finish: function(){
-    if(SETTINGS.debug_show_data_at_end) jsPsych.data.displayData();
+    if(SETTINGS.debug_show_data_at_end && !runState.terminated) jsPsych.data.displayData();
     if(canReturnToProlific()) window.location.assign(completion.url);
   }
 });
@@ -502,23 +505,24 @@ const validPid = value => /^[a-zA-Z0-9]{24}$/.test(value || "");
 let participantPid = (urlParams.get("PROLIFIC_PID") || "").trim();
 let pidSource = validPid(participantPid) ? "url" : "missing";
 if(pidSource === "missing") participantPid = "";
+// Test runs use an unmistakable synthetic ID, never a real Prolific identity.
+if(isTest){ participantPid = `TEST_${subjectId}`; pidSource = "test"; }
 jsPsych.data.addProperties({
   subject_id: subjectId,
   pid: participantPid,
   prolific_pid: participantPid,
-  study_id: urlParams.get("STUDY_ID"),
-  session_id: urlParams.get("SESSION_ID")
+  study_id: isTest ? null : urlParams.get("STUDY_ID"),
+  session_id: isTest ? null : urlParams.get("SESSION_ID")
 });
 
 /* Holds the current issue's piped comparative choice for the open-ended item */
 let pipeChoice = { sentence: "You indicated that the two answers were equally accurate." };
 
-/* Hard terminate: redirect to a screen-out URL if configured, otherwise abort
-   with a closing message. Used by the example attention checks and the
-   first-issue manipulation check. */
+/* Failed checks end the survey before the only upload step. No partial data
+   is streamed, persisted locally, or sent to DataPipe for these runs. */
 function terminateStudy(){
   runState.terminated = true;
-  if(!isPreview && SETTINGS.screenout_url){
+  if(isLive && SETTINGS.screenout_url){
     window.location.assign(SETTINGS.screenout_url);
   } else {
     jsPsych.abortExperiment(
@@ -548,8 +552,8 @@ timeline.push({
   data: { trial_tag: "consent" }
 });
 
-// Only ask when the launch URL did not supply a valid PID. Preview needs no ID.
-if(!isPreview && !participantPid){
+// Only live runs need a Prolific ID. Preview needs none; tests use a synthetic ID.
+if(isLive && !participantPid){
   timeline.push({
     type: jsPsychSurveyText,
     preamble: '<div class="wrap"><h2>Your Prolific ID</h2><p>Please copy your Prolific ID from Prolific so we can match your responses to your submission.</p></div>',
@@ -961,18 +965,20 @@ function createExportSchema(){
   const add = (name, description, read) => fields.push({ name, description, read });
   const metadata = {
     export_schema_version: "Version of the exported column definitions.",
+    trial_type: "participant_summary; this row summarizes one participant, not one trial. Compatible with DataPipe's default required field.",
+    run_mode: "live or test (uploaded), or preview (download only). Exclude test and preview records from analysis.",
     survey_version: "Version of the survey shown to this participant.",
     experiment_id: "DataPipe experiment identifier.",
     subject_id: "Random identifier for this survey run; used in the filename.",
-    pid: "Prolific participant ID, stored as text.",
-    pid_source: "url, manual, or missing (allowed in preview only).",
+    pid: "Prolific participant ID as text; TEST_ plus a random run ID in test mode.",
+    pid_source: "url, manual, test (synthetic ID), or missing (allowed in preview only).",
     study_id: "Prolific STUDY_ID URL parameter, if supplied.",
     session_id: "Prolific SESSION_ID URL parameter, if supplied.",
     started_at_utc: "Survey load time, in ISO 8601 UTC format.",
     exported_at_utc: "Time the CSV was prepared, in ISO 8601 UTC format.",
     save_stage: "after_demographics_before_debrief; debrief completion is not measured in this file.",
     response_status: "responses_complete; this does not certify Prolific completion.",
-    preview: "1 for a local preview export, 0 for live data.",
+    preview: "1 for a local preview export, 0 for an upload-enabled run. Use run_mode to distinguish test from live.",
     duration_to_save_ms: "Elapsed time from survey load to preparation of this file, in milliseconds."
   };
   Object.entries(metadata).forEach(([name, description]) => add(name, description, c => c.details[name]));
@@ -1082,10 +1088,11 @@ function participantCSV(record){
 function prepareExport(){
   const exportedAt = new Date().toISOString();
   return participantCSV(buildParticipantRecord(jsPsych.data.get().values(), {
-    export_schema_version: "1", survey_version: SETTINGS.survey_version,
+    export_schema_version: "2", trial_type: "participant_summary", run_mode: runMode,
+    survey_version: SETTINGS.survey_version,
     experiment_id: SETTINGS.datapipe_experiment_id, subject_id: subjectId,
     pid: participantPid, pid_source: pidSource,
-    study_id: urlParams.get("STUDY_ID") || "", session_id: urlParams.get("SESSION_ID") || "",
+    study_id: isTest ? "" : urlParams.get("STUDY_ID") || "", session_id: isTest ? "" : urlParams.get("SESSION_ID") || "",
     started_at_utc: startedAt, exported_at_utc: exportedAt,
     save_stage: "after_demographics_before_debrief", response_status: "responses_complete",
     preview: Number(isPreview), duration_to_save_ms: Date.parse(exportedAt) - Date.parse(startedAt)
@@ -1105,6 +1112,9 @@ function downloadCSV(csv, filename){
 // The same immutable payload and filename are reused on every retry. Never
 // generate a new filename on failure: the previous request may have succeeded.
 async function uploadCSV(csv, filename){
+  if(runState.terminated || (!isLive && !isTest) || (isLive && !completion)){
+    return { accepted: false, error: "UPLOAD_NOT_ALLOWED" };
+  }
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 20000);
   try {
@@ -1133,8 +1143,9 @@ class SaveSurveyPlugin {
   static info = { name: "save-survey", version: "1.0.0", parameters: {}, data: {} };
   constructor(jsPsychInstance){ this.jsPsych = jsPsychInstance; }
   trial(display){
+    if(runState.terminated) return;
     const csv = prepareExport();
-    const filename = `weighted_attitudes_${subjectId}.csv`;
+    const filename = `${isTest ? "test_" : ""}weighted_attitudes_${subjectId}.csv`;
     let attempts = 0;
     let saving = false;
     if(isPreview){
@@ -1143,12 +1154,12 @@ class SaveSurveyPlugin {
       display.querySelector("#preview-continue").onclick = () => this.jsPsych.finishTrial({ upload_status: "preview_skipped", upload_attempts: 0 });
       return;
     }
-    if(!validPid(participantPid)){
+    if(isLive && !validPid(participantPid)){
       display.innerHTML = '<div class="wrap"><h2>Participant ID missing</h2><p>We could not identify your Prolific submission. Please contact <a href="mailto:czhao99@stanford.edu">czhao99@stanford.edu</a> before closing this page.</p></div>';
       return;
     }
     const save = async () => {
-      if(saving || runState.uploadAccepted) return;
+      if(saving || runState.uploadAccepted || runState.terminated) return;
       saving = true;
       attempts++;
       display.innerHTML = '<div class="wrap" role="status"><h2>Saving your responses</h2><p>Please keep this page open while your responses are saved.</p></div>';
@@ -1156,6 +1167,8 @@ class SaveSurveyPlugin {
       saving = false;
       if(result.accepted){
         runState.uploadAccepted = true;
+        runState.uploadStatus = result.status;
+        runState.uploadFilename = filename;
         this.jsPsych.finishTrial({ upload_status: result.status, upload_attempts: attempts, upload_filename: filename });
         return;
       }
@@ -1178,18 +1191,20 @@ timeline.push({
       <p>The study examines how people evaluate two ways of describing a group’s average opinion: a simple average, in which each group member counts equally, and an intensity-weighted average, in which strongly held opinions receive more weight. We did not explain this beforehand because knowing the study’s purpose could have influenced your judgments. The deception did not concern your abilities or personal characteristics. Your responses remain valuable regardless of the choices you made.</p>
       <p>If you have questions about the study or would like to request withdrawal of your data, please contact <a href="mailto:czhao99@stanford.edu">czhao99@stanford.edu</a>. For questions about your rights as a research participant, contact the Stanford Institutional Review Board at <a href="mailto:irbnonmed@stanford.edu">irbnonmed@stanford.edu</a>.</p>
       <p>Please do not share the study’s purpose with potential participants, as doing so could affect the research results.</p>
-      ${!isPreview && runState.uploadAccepted && !runState.terminated && completion
+      ${isLive && runState.uploadAccepted && !runState.terminated && completion
         ? `<p>Your completion code is <strong>${completion.code}</strong>. If returning to Prolific does not work, enter this code there manually.</p><p>Click below when you have finished reading to return and register your completion.</p>`
-        : "<p>This is a preview. No Prolific completion code is issued.</p>"}
+        : isTest && runState.uploadAccepted
+          ? `<div role="status"><h3>DataPipe test ${runState.uploadStatus === "stored" ? "stored" : "accepted and queued"}</h3><p>${runState.uploadStatus === "stored" ? "DataPipe confirmed that the test file was stored." : "DataPipe accepted the test file and is waiting to deliver it to your storage provider."}</p><p>Filename: <code>${runState.uploadFilename}</code></p><p>This is a test record. No Prolific completion code or redirect is issued.</p></div>`
+          : "<p>This is a preview. No Prolific completion code is issued.</p>"}
     </div>`,
-  choices: !isPreview && completion ? ["Finish and return to Prolific"] : ["Finish preview"],
+  choices: isLive && completion ? ["Finish and return to Prolific"] : [isTest ? "Finish test" : "Finish preview"],
   data: { trial_tag: "debrief" },
   on_finish: function(){ runState.debriefCompleted = true; }
 });
 
 // A production run must have a real completion destination before accepting
-// participants. An explicit ?preview=1 remains available after launch.
-if(!isPreview && !completion){
+// participants. Tests can upload without Prolific; ?preview=1 never uploads.
+if(!["preview", "test", "live"].includes(runMode) || (isLive && !completion)){
   document.body.innerHTML = '<div style="max-width:640px;margin:60px auto;font-family:sans-serif;line-height:1.5"><h2>This study is not ready to begin</h2><p>The completion link has not been configured. Please contact the researcher through Prolific.</p></div>';
 } else {
   jsPsych.run(timeline);

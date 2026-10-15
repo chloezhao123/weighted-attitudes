@@ -32,3 +32,4 @@ __pycache__/
 # Participant exports and preview/backup copies must stay out of this public repo
 weighted_attitudes_*.csv
 preview_weighted_attitudes_*.csv
+test_weighted_attitudes_*.csv
