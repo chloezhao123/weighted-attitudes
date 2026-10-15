@@ -147,12 +147,6 @@
     }
     .opt-num { display: block; font-size: 16px; font-weight: 800; line-height: 1; }
     .scale-opinion .opt-num { color: var(--c-opinion); }
-    .scale-intensity .opt .opt-num {
-      display: block; margin-top: 5px;
-      font-size: 12px; font-weight: 700; opacity: .82;
-    }
-    .scale-intensity .opt-int-1 .opt-num { color: var(--ink); }
-    .scale-intensity .opt-int-2 .opt-num { color: #fff; }
     .opt-lab {
       display: block; font-size: 10px; color: var(--muted);
       margin-top: 5px; line-height: 1.2;
@@ -203,6 +197,14 @@
 
     /* Keep the rating (Likert) scales at the bottom to a narrower width */
     .jspsych-survey-likert-opts { max-width: 520px; margin-left: auto; margin-right: auto; }
+    body.study-preview::after {
+      content: "Preview — no upload or Prolific completion";
+      position: fixed; bottom: 0; left: 0; right: 0; z-index: 100;
+      padding: 8px; background: #fff3cd; color: #594500;
+      font: 14px sans-serif; text-align: center;
+    }
+    body.study-preview .jspsych-content { padding-bottom: 50px; }
+    .save-actions { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; }
   </style>
 </head>
 <body></body>
@@ -234,6 +236,11 @@
 /* ---------- Settings you may want to edit ---------- */
 const SETTINGS = {
   study_minutes: 8,
+  survey_version: "2026-10-14",
+  datapipe_experiment_id: "zUNcXd9EgcNe",
+  // Keep false until the DataPipe setup and Prolific completion URL are verified.
+  // Preview mode never uploads data or follows completion/screen-out redirects.
+  data_collection_enabled: false,
   // Set to true while testing to dump the data table at the end.
   debug_show_data_at_end: false,
   // Real-data framing per the locked spec. If you switch to hypothetical
@@ -320,7 +327,7 @@ function legendHTML(){
   const opinion = ["-2","-1","0","1","2"].map(k =>
     `<span class="chip">${fmtInt(parseInt(k))} &nbsp;${POS_LABELS[k]}</span>`).join("");
   const strength = ["1","2"].map(k =>
-    `<span class="chip">${k} &nbsp;${STR_LABELS[k]}</span>`).join("");
+    `<span class="chip">${STR_LABELS[k]}</span>`).join("");
   return `
     <div class="legend">
       <div class="legend-title">Extremity scale (where the person stands)</div>
@@ -331,7 +338,7 @@ function legendHTML(){
 }
 
 /* The blank questionnaire each member filled out: statement + two
-   color-coded questions, each with a prominent-number response scale. */
+   color-coded questions; only the opinion scale displays numeric values. */
 function opinionScaleHTML(){
   // Keep the two "Slightly ..." labels two lines so the tiles align.
   const labelFix = { "-1":"Slightly<br>disagree", "1":"Slightly<br>agree" };
@@ -346,7 +353,6 @@ function intensityScaleHTML(){
   const opts = [1,2].map(v => `
     <div class="opt opt-int-${v}">
       <span class="opt-lab">${STR_LABELS[String(v)]}</span>
-      <span class="opt-num">(${v})</span>
     </div>`).join("");
   return `<div class="scale scale-intensity">${opts}</div>`;
 }
@@ -398,8 +404,8 @@ function peopleRevealHTML(ctx, msg){
       ${histogramHTML(ctx.displayMembers)}
       <div class="hist-caption">Each block is one person, placed at their opinion of the target statement.</div>
       <div class="hist-key">
-        <span><span class="dot lo"></span>somewhat strongly (1)</span>
-        <span><span class="dot hi"></span>very strongly (2)</span>
+        <span><span class="dot lo"></span>somewhat strongly</span>
+        <span><span class="dot hi"></span>very strongly</span>
       </div>
     </div>`;
 }
@@ -452,7 +458,7 @@ function contextHTML(ctx, opts){
 }
 
 /* ---------- Scale label arrays ---------- */
-const ACC_LABELS = ["1<br>Not at all<br>accurate","2","3","4","5","6","7<br>Extremely<br>accurate"];
+const ACC_LABELS = ["Completely<br>inaccurate", "", "", "", "", "", "Completely<br>accurate"];
 function bipolarLabels(leftWord, rightWord){
   // 7-point; index 3 is the midpoint
   return [leftWord, "", "", "Equally so", "", "", rightWord];
@@ -461,19 +467,45 @@ function bipolarLabels(leftWord, rightWord){
 /* ============================================================
    Build experiment
    ============================================================ */
+const urlParams = new URLSearchParams(window.location.search);
+const isPreview = !SETTINGS.data_collection_enabled || urlParams.get("preview") === "1";
+const runState = { terminated: false, uploadAccepted: false, debriefCompleted: false };
+if(isPreview) document.body.classList.add("study-preview");
+
+function completionDetails(url){
+  if(!url) return null;
+  try {
+    const parsed = new URL(url);
+    const code = parsed.searchParams.get("cc");
+    if(parsed.protocol !== "https:" || parsed.hostname !== "app.prolific.com" ||
+       parsed.pathname !== "/submissions/complete" || !code || !/^[a-zA-Z0-9]+$/.test(code)) return null;
+    return { url: parsed.href, code };
+  } catch { return null; }
+}
+const completion = completionDetails(SETTINGS.completion_url);
+function canReturnToProlific(){
+  return !isPreview && !runState.terminated && runState.uploadAccepted &&
+         runState.debriefCompleted && completion !== null;
+}
+
 const jsPsych = initJsPsych({
   on_finish: function(){
     if(SETTINGS.debug_show_data_at_end) jsPsych.data.displayData();
-    if(SETTINGS.completion_url) window.location = SETTINGS.completion_url;
+    if(canReturnToProlific()) window.location.assign(completion.url);
   }
 });
 
 /* Subject + URL params (Prolific-friendly) */
-const urlParams = new URLSearchParams(window.location.search);
-const subjectId = jsPsych.randomization.randomID(10);
+const subjectId = jsPsych.randomization.randomID(20);
+const startedAt = new Date().toISOString();
+const validPid = value => /^[a-zA-Z0-9]{24}$/.test(value || "");
+let participantPid = (urlParams.get("PROLIFIC_PID") || "").trim();
+let pidSource = validPid(participantPid) ? "url" : "missing";
+if(pidSource === "missing") participantPid = "";
 jsPsych.data.addProperties({
   subject_id: subjectId,
-  prolific_pid: urlParams.get("PROLIFIC_PID"),
+  pid: participantPid,
+  prolific_pid: participantPid,
   study_id: urlParams.get("STUDY_ID"),
   session_id: urlParams.get("SESSION_ID")
 });
@@ -485,8 +517,9 @@ let pipeChoice = { sentence: "You indicated that the two answers were equally ac
    with a closing message. Used by the example attention checks and the
    first-issue manipulation check. */
 function terminateStudy(){
-  if(SETTINGS.screenout_url){
-    window.location = SETTINGS.screenout_url;
+  runState.terminated = true;
+  if(!isPreview && SETTINGS.screenout_url){
+    window.location.assign(SETTINGS.screenout_url);
   } else {
     jsPsych.abortExperiment(
       '<div style="max-width:560px;margin:60px auto;font-family:sans-serif;line-height:1.5;text-align:left">' +
@@ -514,6 +547,28 @@ timeline.push({
   choices: ["I agree"],
   data: { trial_tag: "consent" }
 });
+
+// Only ask when the launch URL did not supply a valid PID. Preview needs no ID.
+if(!isPreview && !participantPid){
+  timeline.push({
+    type: jsPsychSurveyText,
+    preamble: '<div class="wrap"><h2>Your Prolific ID</h2><p>Please copy your Prolific ID from Prolific so we can match your responses to your submission.</p></div>',
+    questions: [{ prompt: "Prolific ID", name: "pid", required: true, rows: 1, columns: 30 }],
+    data: { trial_tag: "participant_id" },
+    on_load: function(){
+      const input = document.querySelector('input[name="pid"], #input-0');
+      input.pattern = "[a-zA-Z0-9]{24}";
+      input.minLength = 24;
+      input.maxLength = 24;
+      input.title = "Enter the 24 letters and numbers in your Prolific ID.";
+    },
+    on_finish: function(d){
+      participantPid = d.response.pid.trim();
+      pidSource = "manual";
+      jsPsych.data.addProperties({ pid: participantPid, prolific_pid: participantPid });
+    }
+  });
+}
 
 /* ---------- Instructions (stepped, with worked examples) ----------
    Fixed example questionnaires with clear majorities, so the two attention
@@ -687,7 +742,7 @@ timeline.push({
       <p class="lead">You're ready to begin.</p>
       <p style="white-space:nowrap">From now on, you'll see more answers that other participants gave about different groups.</p>
       <p>This time, instead of reporting what each answer was, your job is to rate how
-      <strong>accurate</strong> each answer is &mdash; that is, how accurately it describes the group's average opinion.</p>
+      <strong>accurate or inaccurate</strong> each answer is &mdash; that is, how accurately or inaccurately it describes the group's average opinion.</p>
       <p>Click <strong>Begin</strong> to start.</p>
     </div>`,
   choices: ["Begin"],
@@ -765,10 +820,19 @@ issueOrder.forEach(function(issue, issueIndex){
     preamble: contextHTML(ctx, { showGroup:true, showSummaries:true }),
     randomize_question_order: false,
     questions: [
-      { prompt: "How accurate is <strong>Person 1's</strong> answer?", labels: ACC_LABELS, required: true, name: "acc_A" },
-      { prompt: "How accurate is <strong>Person 2's</strong> answer?", labels: ACC_LABELS, required: true, name: "acc_B" }
+      { prompt: "How accurate or inaccurate is <strong>Person 1's</strong> answer?", labels: ACC_LABELS, required: true, name: "acc_A" },
+      { prompt: "How accurate or inaccurate is <strong>Person 2's</strong> answer?", labels: ACC_LABELS, required: true, name: "acc_B" }
     ],
     data: Object.assign({ trial_tag: "accuracy" }, blockData),
+    on_load: function(){
+      // Keep intermediate choices identifiable to screen readers without
+      // displaying numeric labels on the scale.
+      document.querySelectorAll(".jspsych-survey-likert-opts").forEach((scale, person) => {
+        scale.querySelectorAll('input[type="radio"]').forEach((input, index) => {
+          input.setAttribute("aria-label", `Person ${person + 1}'s answer: position ${index + 1} of 7, from completely inaccurate to completely accurate`);
+        });
+      });
+    },
     on_finish: function(d){
       const accA = d.response.acc_A + 1; // labels are 0-indexed
       const accB = d.response.acc_B + 1;
@@ -857,6 +921,27 @@ timeline.push({
   data: { trial_tag: "demographics_gender" }
 });
 timeline.push({
+  type: jsPsychSurveyMultiChoice,
+  questions: [{
+    prompt: "What is the highest level of education you have completed?",
+    name: "education", required: true,
+    options: [
+      "Less than high school",
+      "High school diploma or equivalent (e.g., GED)",
+      "Some college, no degree",
+      "Trade, technical, or vocational qualification",
+      "Associate degree",
+      "Bachelor's degree",
+      "Master's degree",
+      "Professional degree (e.g., JD, MD)",
+      "Doctoral degree (e.g., PhD, EdD)",
+      "Other",
+      "Prefer not to say"
+    ]
+  }],
+  data: { trial_tag: "demographics_education" }
+});
+timeline.push({
   type: jsPsychSurveyLikert,
   questions: [{
     prompt: "In general, how would you describe your political views?",
@@ -868,21 +953,246 @@ timeline.push({
   on_finish: function(d){ d.ideology_1to7 = d.response.ideology + 1; }
 });
 
+/* ---------- Analysis export: one participant, one row, fixed columns ----------
+   All response fields are scalars. The codebook is generated from this schema.
+   The save precedes debriefing, so it does not assert that debriefing was read. */
+function createExportSchema(){
+  const fields = [];
+  const add = (name, description, read) => fields.push({ name, description, read });
+  const metadata = {
+    export_schema_version: "Version of the exported column definitions.",
+    survey_version: "Version of the survey shown to this participant.",
+    experiment_id: "DataPipe experiment identifier.",
+    subject_id: "Random identifier for this survey run; used in the filename.",
+    pid: "Prolific participant ID, stored as text.",
+    pid_source: "url, manual, or missing (allowed in preview only).",
+    study_id: "Prolific STUDY_ID URL parameter, if supplied.",
+    session_id: "Prolific SESSION_ID URL parameter, if supplied.",
+    started_at_utc: "Survey load time, in ISO 8601 UTC format.",
+    exported_at_utc: "Time the CSV was prepared, in ISO 8601 UTC format.",
+    save_stage: "after_demographics_before_debrief; debrief completion is not measured in this file.",
+    response_status: "responses_complete; this does not certify Prolific completion.",
+    preview: "1 for a local preview export, 0 for live data.",
+    duration_to_save_ms: "Elapsed time from survey load to preparation of this file, in milliseconds."
+  };
+  Object.entries(metadata).forEach(([name, description]) => add(name, description, c => c.details[name]));
+  add("consent_agreed", "1 if the participant clicked I agree; blank if not recorded.", c => c.get("consent").response === 0 ? 1 : null);
+  const demos = [
+    ["age", "demographics_age", "age", "What is your age? Original text entered by the participant."],
+    ["gender", "demographics_gender", "gender", "What is your gender? Selected option text."],
+    ["education", "demographics_education", "education", "Highest level of education completed. Selected option text; prefer-not-to-say is retained explicitly."]
+  ];
+  demos.forEach(([name, tag, key, description]) => add(name, description, c => c.get(tag).response?.[key]));
+  add("ideology_1to7", "Political views: 1=Extremely liberal, 2=Liberal, 3=Slightly liberal, 4=Moderate, 5=Slightly conservative, 6=Conservative, 7=Extremely conservative.", c => c.get("demographics_ideology").ideology_1to7);
+  ["consent", "demographics_age", "demographics_gender", "demographics_education", "demographics_ideology"].forEach(tag =>
+    add(`${tag}_rt_ms`, "Time on this screen in milliseconds.", c => c.get(tag).rt));
+
+  [1, 2].forEach(round => {
+    const tag = `instructions_check_${round}`;
+    [["agreement", "ac_agree"], ["strength", "ac_strength"]].forEach(([name, key]) => {
+      add(`${tag}_${name}_response`, `Example ${round}: selected option for the group ${name} question.`, c => c.get(tag).response?.[key]);
+      add(`${tag}_${name}_correct`, "1=correct, 0=incorrect.", c => c.get(tag)[`${key}_correct`]);
+    });
+    add(`${tag}_passed`, "1=both questions correct, 0=at least one incorrect.", c => c.get(tag).ac_correct);
+    add(`${tag}_rt_ms`, "Time for both questions on this screen in milliseconds.", c => c.get(tag).rt);
+    const tfTag = `instructions_answercheck_${round}`;
+    ["A", "B"].forEach((person, index) => {
+      ["value", "meaning"].forEach(kind => {
+        const name = `${tfTag}_person${index + 1}_${kind}`;
+        const key = `tf_${kind}_${person}`;
+        add(`${name}_response`, `Answer example ${round}, Person ${index + 1}, ${kind} question: True or False.`, c => c.get(tfTag).response?.[key]);
+        add(`${name}_correct`, "1=correct, 0=incorrect.", c => c.get(tfTag)[`${key}_correct`]);
+      });
+      add(`${tfTag}_person${index + 1}_meaning_phrase`, "The interpretation phrase shown in the true/false question.", c => c.get(tfTag)[`tf_phrase_${person}`]);
+    });
+    add(`${tfTag}_passed`, "1=all four questions correct, 0=at least one incorrect.", c => c.get(tfTag).tf_correct);
+    add(`${tfTag}_rt_ms`, "Time for all four questions on this screen in milliseconds.", c => c.get(tfTag).rt);
+  });
+
+  ISSUES.forEach(issue => {
+    const addIssue = (suffix, description, tag, key, response = false) => add(
+      `${issue.key}_${suffix}`, description,
+      c => response ? c.get(tag, issue.key).response?.[key] : c.get(tag, issue.key)[key]
+    );
+    [
+      ["issue_order", "issue_position_in_session", "Position in the participant's randomized issue order: 1, 2, or 3; also the displayed group number."],
+      ["cell_id", "cell_id", "Assigned stimulus cell identifier."],
+      ["stimulus_set", "set", "Assigned stimulus set."],
+      ["group_size", "n", "Number of people in the displayed group: 4 or 5."],
+      ["mean", "mean", "Unweighted mean opinion of the group."],
+      ["skew", "skew", "Assigned intensity pattern: Left, Same, or Right."],
+      ["simple_type", "simple_type", "integer or half; format of the simple estimate."],
+      ["person1_estimate_value", "displayed_A", "Numeric estimate displayed as Person 1's answer."],
+      ["person2_estimate_value", "displayed_B", "Numeric estimate displayed as Person 2's answer."],
+      ["simple_value", "simple_value", "Displayed simple estimate."],
+      ["weighted_value", "weighted_value", "Displayed stylized estimate used in the weighted condition; selected from the stimulus cell, not recomputed."]
+    ].forEach(([name, key, description]) => addIssue(name, description, "stimulus", key));
+    [1, 2].forEach(person => add(`${issue.key}_person${person}_estimate_type`, "simple or weighted; identifies the estimate assigned to this person.", c => {
+      const simpleFirst = c.get("stimulus", issue.key).a_is_simple;
+      return typeof simpleFirst === "boolean" ? ((person === 1) === simpleFirst ? "simple" : "weighted") : null;
+    }));
+    for(let member = 0; member < 5; member++){
+      ["opinion", "intensity"].forEach((kind, dimension) => add(
+        `${issue.key}_member${member + 1}_${kind}`,
+        kind === "opinion" ? "Member's opinion: -2=Disagree, -1=Slightly disagree, 0=Neither, 1=Slightly agree, 2=Agree. Canonical stimulus order; member 5 blank for groups of 4."
+          : "Member's intensity: 1=Somewhat strongly, 2=Very strongly. Internal category codes, not shown to participants.",
+        c => {
+          const members = c.get("stimulus", issue.key).members;
+          return members ? JSON.parse(members)[member]?.[dimension] : null;
+        }
+      ));
+    }
+    [["person1", "acc_A_raw"], ["person2", "acc_B_raw"], ["simple", "acc_simple"], ["weighted", "acc_weighted"]].forEach(([name, key]) =>
+      addIssue(`accuracy_${name}`, "Accuracy rating: 1=Completely inaccurate, 7=Completely accurate. Intermediate choices are unlabeled.", "accuracy", key));
+    addIssue("comparative_accuracy", "Whose answer is more accurate? 1=Person 1 much more accurate, 4=Equally so, 7=Person 2 much more accurate.", "comparative", "comp_raw");
+    addIssue("comparative_toward_weighted", "Comparative accuracy recoded: 1=favors simple, 4=equal, 7=favors weighted.", "comparative", "comp_toward_weighted");
+    const followups = {
+      descriptive: "Which answer better captures what most people in the group actually think?",
+      moral: "Which answer is the fairer representation of the group (closer to how the group ought to be seen)?",
+      predictive: "Which answer better helps anticipate what the group would do if it took collective action?"
+    };
+    Object.entries(followups).forEach(([name, question]) => {
+      addIssue(name, `${question} 1=Person 1 much more so, 4=Equally so, 7=Person 2 much more so.`, "followups", `${name}_raw`);
+      addIssue(`${name}_toward_weighted`, "Recoded response: 1=favors simple, 4=equal, 7=favors weighted.", "followups", `${name}_toward_weighted`);
+    });
+    addIssue("open_reason", "Briefly, why? Optional explanation following the comparative accuracy response.", "open_ended", "open_reason", true);
+    ["stimulus", "accuracy", "comparative", "followups", "open_ended"].forEach(tag =>
+      addIssue(`${tag}_rt_ms`, "Time for this entire screen in milliseconds (not per question).", tag, "rt"));
+  });
+  return fields;
+}
+const EXPORT_SCHEMA = createExportSchema();
+
+function buildParticipantRecord(trials, details){
+  const lookup = new Map(trials.map(d => [`${d.issue || ""}:${d.trial_tag}`, d]));
+  const context = { details, get: (tag, issue = "") => lookup.get(`${issue}:${tag}`) || {} };
+  return Object.fromEntries(EXPORT_SCHEMA.map(field => {
+    const value = field.read(context);
+    return [field.name, typeof value === "boolean" ? Number(value) : (value ?? "")];
+  }));
+}
+function csvCell(value){
+  const text = String(value ?? "");
+  return /[",\r\n]/.test(text) ? '"' + text.replace(/"/g, '""') + '"' : text;
+}
+function participantCSV(record){
+  const columns = EXPORT_SCHEMA.map(field => field.name);
+  return columns.map(csvCell).join(",") + "\r\n" + columns.map(key => csvCell(record[key])).join(",") + "\r\n";
+}
+function prepareExport(){
+  const exportedAt = new Date().toISOString();
+  return participantCSV(buildParticipantRecord(jsPsych.data.get().values(), {
+    export_schema_version: "1", survey_version: SETTINGS.survey_version,
+    experiment_id: SETTINGS.datapipe_experiment_id, subject_id: subjectId,
+    pid: participantPid, pid_source: pidSource,
+    study_id: urlParams.get("STUDY_ID") || "", session_id: urlParams.get("SESSION_ID") || "",
+    started_at_utc: startedAt, exported_at_utc: exportedAt,
+    save_stage: "after_demographics_before_debrief", response_status: "responses_complete",
+    preview: Number(isPreview), duration_to_save_ms: Date.parse(exportedAt) - Date.parse(startedAt)
+  }));
+}
+function downloadCSV(csv, filename){
+  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.hidden = true;
+  document.body.appendChild(link);
+  link.click();
+  setTimeout(() => { link.remove(); URL.revokeObjectURL(url); }, 1000);
+}
+
+// The same immutable payload and filename are reused on every retry. Never
+// generate a new filename on failure: the previous request may have succeeded.
+async function uploadCSV(csv, filename){
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 20000);
+  try {
+    const response = await fetch("https://pipe.jspsych.org/api/data/", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ experimentID: SETTINGS.datapipe_experiment_id, filename, data: csv }),
+      signal: controller.signal
+    });
+    const result = await response.json();
+    if((response.status === 201 || response.status === 202) && !result.error){
+      return { accepted: true, status: response.status === 202 ? "queued" : "stored" };
+    }
+    // FILE_EXISTS alone cannot confirm the contents of an earlier submission.
+    return { accepted: false, error: result.error || `HTTP_${response.status}` };
+  } catch(error){
+    return { accepted: false, error: error.name === "AbortError" ? "TIMEOUT" : "NETWORK_ERROR" };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+/* A small local jsPsych plugin holds the timeline until saving is acknowledged.
+   It uses DataPipe's documented text-data endpoint so the CSV shape and save
+   position are explicit; no automatic end-of-experiment upload is registered. */
+class SaveSurveyPlugin {
+  static info = { name: "save-survey", version: "1.0.0", parameters: {}, data: {} };
+  constructor(jsPsychInstance){ this.jsPsych = jsPsychInstance; }
+  trial(display){
+    const csv = prepareExport();
+    const filename = `weighted_attitudes_${subjectId}.csv`;
+    let attempts = 0;
+    let saving = false;
+    if(isPreview){
+      display.innerHTML = '<div class="wrap"><h2>Preview: responses ready</h2><p>No data has been uploaded. Download the analysis CSV to inspect this test run, or continue to the debrief.</p><div class="save-actions"><button class="jspsych-btn" id="preview-download">Download preview CSV</button><button class="jspsych-btn" id="preview-continue">Continue to debrief</button></div></div>';
+      display.querySelector("#preview-download").onclick = () => downloadCSV(csv, `preview_${filename}`);
+      display.querySelector("#preview-continue").onclick = () => this.jsPsych.finishTrial({ upload_status: "preview_skipped", upload_attempts: 0 });
+      return;
+    }
+    if(!validPid(participantPid)){
+      display.innerHTML = '<div class="wrap"><h2>Participant ID missing</h2><p>We could not identify your Prolific submission. Please contact <a href="mailto:czhao99@stanford.edu">czhao99@stanford.edu</a> before closing this page.</p></div>';
+      return;
+    }
+    const save = async () => {
+      if(saving || runState.uploadAccepted) return;
+      saving = true;
+      attempts++;
+      display.innerHTML = '<div class="wrap" role="status"><h2>Saving your responses</h2><p>Please keep this page open while your responses are saved.</p></div>';
+      const result = await uploadCSV(csv, filename);
+      saving = false;
+      if(result.accepted){
+        runState.uploadAccepted = true;
+        this.jsPsych.finishTrial({ upload_status: result.status, upload_attempts: attempts, upload_filename: filename });
+        return;
+      }
+      display.innerHTML = '<div class="wrap" role="alert"><h2>We could not confirm your responses were saved</h2><p>Your responses are still available on this page. Please check your connection and try again. Do not refresh or close this page.</p><p>If the problem continues, you can download a backup and contact <a href="mailto:czhao99@stanford.edu">czhao99@stanford.edu</a> with the reference below.</p><p id="save-reference"></p><div class="save-actions"><button class="jspsych-btn" id="save-retry">Try again</button><button class="jspsych-btn" id="save-backup">Download response backup</button></div></div>';
+      display.querySelector("#save-reference").textContent = `Reference: ${subjectId} (${result.error})`;
+      display.querySelector("#save-retry").onclick = save;
+      display.querySelector("#save-backup").onclick = () => downloadCSV(csv, filename);
+    };
+    save();
+  }
+}
+timeline.push({ type: SaveSurveyPlugin, data: { trial_tag: "save_data" } });
+
 /* ---------- Completion / deception debrief ---------- */
 timeline.push({
   type: jsPsychHtmlButtonResponse,
-  stimulus: `<div class="wrap">
+  stimulus: () => `<div class="wrap">
       <h2>Thank you for participating</h2>
       <p>Some information about this study was not disclosed before you began. The group responses and the answers attributed to “Person 1” and “Person 2” were constructed by the researchers rather than necessarily being responses from earlier participants.</p>
       <p>The study examines how people evaluate two ways of describing a group’s average opinion: a simple average, in which each group member counts equally, and an intensity-weighted average, in which strongly held opinions receive more weight. We did not explain this beforehand because knowing the study’s purpose could have influenced your judgments. The deception did not concern your abilities or personal characteristics. Your responses remain valuable regardless of the choices you made.</p>
       <p>If you have questions about the study or would like to request withdrawal of your data, please contact <a href="mailto:czhao99@stanford.edu">czhao99@stanford.edu</a>. For questions about your rights as a research participant, contact the Stanford Institutional Review Board at <a href="mailto:irbnonmed@stanford.edu">irbnonmed@stanford.edu</a>.</p>
       <p>Please do not share the study’s purpose with potential participants, as doing so could affect the research results.</p>
-      ${SETTINGS.completion_url ? "<p>Click below to return and register your completion.</p>" : ""}
+      ${!isPreview && runState.uploadAccepted && !runState.terminated && completion
+        ? `<p>Your completion code is <strong>${completion.code}</strong>. If returning to Prolific does not work, enter this code there manually.</p><p>Click below when you have finished reading to return and register your completion.</p>`
+        : "<p>This is a preview. No Prolific completion code is issued.</p>"}
     </div>`,
-  choices: SETTINGS.completion_url ? ["Finish"] : ["Done"],
-  data: { trial_tag: "debrief" }
+  choices: !isPreview && completion ? ["Finish and return to Prolific"] : ["Finish preview"],
+  data: { trial_tag: "debrief" },
+  on_finish: function(){ runState.debriefCompleted = true; }
 });
 
-jsPsych.run(timeline);
+// A production run must have a real completion destination before accepting
+// participants. An explicit ?preview=1 remains available after launch.
+if(!isPreview && !completion){
+  document.body.innerHTML = '<div style="max-width:640px;margin:60px auto;font-family:sans-serif;line-height:1.5"><h2>This study is not ready to begin</h2><p>The completion link has not been configured. Please contact the researcher through Prolific.</p></div>';
+} else {
+  jsPsych.run(timeline);
+}
 </script>
 </html>

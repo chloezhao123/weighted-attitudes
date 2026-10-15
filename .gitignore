@@ -10,3 +10,25 @@
 
 # Logs
 *.log
+
+# Python analysis helper / test caches
+__pycache__/
+*.pyc
+
+# Local research documents, render outputs, and temporary browser profiles
+/tmp/
+/output/
+/.docx-work-info-sheet/
+/Launch_details*/
+/INFORMATION SHEET_Exempt_filled.docx
+/DATA_CODEBOOK.md
+/LAUNCH_NOTES.md
+
+# Local agent configuration and analysis/testing tools; not used by the survey
+/.claude/
+/scripts/
+/tests/
+
+# Participant exports and preview/backup copies must stay out of this public repo
+weighted_attitudes_*.csv
+preview_weighted_attitudes_*.csv
